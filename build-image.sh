@@ -170,63 +170,84 @@ EOF
         echo "  [$LABEL] Installed kernel modules (${KVER})"
     fi
 
-    # c) CAN adapter support (optional — graceful timeout)
+    # c) CAN adapter support (multi-adapter, optional — graceful timeout)
 
-    # Udev rule: rename ANY USB-CAN adapter to can_s0
+    # Helper script: assigns sequential can_sN names for USB-CAN adapters
+    cat > "$MNT/usr/local/bin/next-can-name.sh" << 'SCRIPT'
+#!/bin/bash
+for i in 0 1 2 3 4; do
+    if ! ip link show "can_s$i" >/dev/null 2>&1; then
+        echo "can_s$i"
+        exit 0
+    fi
+done
+echo "can_s5"
+SCRIPT
+    chmod +x "$MNT/usr/local/bin/next-can-name.sh"
+
+    # Udev rules: rename USB-CAN adapters to can_s0, can_s1, etc. and restart CAN service
     cat > "$MNT/etc/udev/rules.d/90-usb-can-rename.rules" << 'EOF'
-SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", NAME="can_s0"
+SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", PROGRAM="/usr/local/bin/next-can-name.sh", NAME="%c"
+SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", RUN+="/bin/systemctl restart limelight_canbusprocess.service"
 EOF
 
-    # canbusprocess: load gs_usb module, 30s timeout, clean exit if no adapter
+    # canbusprocess: configure ALL can_s* interfaces, CAN FD 1Mbps/5Mbps
     mkdir -p "$MNT/etc/systemd/system/limelight_canbusprocess.service.d"
     cat > "$MNT/etc/systemd/system/limelight_canbusprocess.service.d/override.conf" << 'EOF'
 [Service]
 ExecStart=
 ExecStart=/bin/bash -c '\
   modprobe gs_usb 2>/dev/null; \
-  echo "Waiting for can_s0 (30s timeout)..."; \
+  echo "Waiting for CAN adapters (30s timeout)..."; \
   for i in $(seq 1 30); do \
-    ip link show can_s0 >/dev/null 2>&1 && break; \
+    ls /sys/class/net/can_s* >/dev/null 2>&1 && break; \
     sleep 1; \
   done; \
-  if ! ip link show can_s0 >/dev/null 2>&1; then \
-    echo "can_s0 not found after 30s, no CAN adapter present"; \
+  IFACES=$(ls -d /sys/class/net/can_s* 2>/dev/null | xargs -n1 basename); \
+  if [ -z "$IFACES" ]; then \
+    echo "No CAN adapters found after 30s"; \
     exit 0; \
   fi; \
-  echo "can_s0 found, configuring..."; \
-  ip link set can_s0 down 2>/dev/null; \
-  ip link set can_s0 type can bitrate 1000000 dbitrate 5000000 fd on; \
-  ip link set can_s0 txqueuelen 1000; \
-  ip link set can_s0 up; \
-  echo "can_s0 up at 1Mbps/5Mbps CAN FD"; \
+  for iface in $IFACES; do \
+    echo "Configuring $iface..."; \
+    ip link set $iface down 2>/dev/null; \
+    ip link set $iface type can bitrate 1000000 dbitrate 5000000 fd on; \
+    ip link set $iface txqueuelen 1000; \
+    ip link set $iface up; \
+    echo "$iface up at 1Mbps/5Mbps CAN FD"; \
+  done; \
   sleep 1; \
-  cansend can_s0 000#00 && echo "CAN discovery frame sent" || echo "cansend failed"; \
-  while ip link show can_s0 >/dev/null 2>&1; do sleep 2; done; \
-  echo "can_s0 disappeared, restarting..."'
+  for iface in $IFACES; do \
+    cansend $iface 000#00 && echo "CAN discovery frame sent on $iface" || echo "cansend failed on $iface"; \
+  done; \
+  COUNT=$(echo "$IFACES" | wc -w); \
+  echo "$COUNT CAN adapter(s) configured, monitoring..."; \
+  while [ "$(ls -d /sys/class/net/can_s* 2>/dev/null | wc -l)" -ge "$COUNT" ]; do sleep 2; done; \
+  echo "CAN adapter removed, restarting..."'
 Restart=always
 RestartSec=3
 EOF
 
-    # canbuswatchdog: only watch can_s0, skip if not present
+    # canbuswatchdog: watch first available can_s* interface
     mkdir -p "$MNT/etc/systemd/system/limelight_canbuswatchdog.service.d"
     cat > "$MNT/etc/systemd/system/limelight_canbuswatchdog.service.d/override.conf" << 'EOF'
 [Service]
 ExecStartPre=
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 10); do ip link show can_s0 >/dev/null 2>&1 && exit 0; sleep 1; done; echo "can_s0 not found, skipping watchdog"; exit 1'
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 10); do ls /sys/class/net/can_s* >/dev/null 2>&1 && exit 0; sleep 1; done; echo "No CAN adapters found, skipping watchdog"; exit 1'
 ExecStart=
-ExecStart=/usr/local/bin/canbuswatchdog/canbuswatchdog can_s0
+ExecStart=/bin/bash -c 'IFACE=$(ls -d /sys/class/net/can_s* 2>/dev/null | head -1 | xargs basename); exec /usr/local/bin/canbuswatchdog/canbuswatchdog $IFACE'
 Restart=on-failure
 RestartSec=10
 EOF
 
-    # robot.service: wait for CAN but start regardless
+    # robot.service: wait for any CAN adapter but start regardless
     mkdir -p "$MNT/etc/systemd/system/robot.service.d"
     cat > "$MNT/etc/systemd/system/robot.service.d/override.conf" << 'EOF'
 [Service]
 ExecStartPre=
-ExecStartPre=/bin/bash -c 'echo "Waiting for can_s0 (30s)..."; for i in $(seq 1 30); do ip link show can_s0 >/dev/null 2>&1 && exit 0; sleep 1; done; echo "can_s0 not found, starting robot anyway"; exit 0'
+ExecStartPre=/bin/bash -c 'echo "Waiting for CAN adapters (30s)..."; for i in $(seq 1 30); do ls /sys/class/net/can_s* >/dev/null 2>&1 && exit 0; sleep 1; done; echo "No CAN adapters found, starting robot anyway"; exit 0'
 EOF
-    echo "  [$LABEL] Installed CAN adapter support (optional, 30s timeout)"
+    echo "  [$LABEL] Installed multi-adapter CAN FD support (optional, 30s timeout)"
 
     # d) Wireless regulatory database
     if [ -f "$REGDB_DEB" ]; then
@@ -286,8 +307,9 @@ echo "    - 4K-page kernel + modules (stock kernel is 16K, breaks Buildroot bina
 echo "    - HDMI output enabled"
 echo "    - SPI CAN overlays disabled (no hardware on Pi 5B)"
 echo "    - flash-pico.sh (auto-flashes RP2350 Pico on any USB port)"
-echo "    - USB-CAN adapter support (any adapter, auto-configured at 1Mbps)"
+echo "    - USB-CAN multi-adapter support (can_s0-s4, CAN FD 1Mbps/5Mbps)"
 echo "    - CAN is optional (30s timeout, robot starts regardless)"
+echo "    - Hot-plug: new adapters auto-named and configured"
 echo "    - Wireless regulatory database (US WiFi channels)"
 echo ""
 echo "  Flash to SD card:"
