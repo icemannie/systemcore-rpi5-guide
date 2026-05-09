@@ -1,0 +1,24 @@
+# Large binary files (not tracked in git)
+*.img
+*.zip
+*.deb
+*.tar.gz
+*.tar.xz
+
+# Kernel source tree (cloned by build-kernel.sh)
+rpi-linux/
+
+# Build output
+output/
+cache/
+
+# NFS root and TFTP boot files (generated)
+netboot/nfsroot/
+netboot/rootfs.img
+netboot/tftpboot/
+
+# Upstream source reference
+systemcore-os-public-*/
+
+# Claude Code local settings
+.claude/

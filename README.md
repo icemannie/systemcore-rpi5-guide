@@ -1,118 +1,141 @@
 # FRC SystemCore on Raspberry Pi 5
 
-Run the [Limelight SystemCore Beta](https://github.com/LimelightVision/systemcore-os-public) on a standard Raspberry Pi 5 Model B instead of the Compute Module 5.
-
-## Why this is needed
-
-The SystemCore image is built for the Raspberry Pi Compute Module 5 and won't boot on a standard Pi 5 out of the box due to three issues:
-
-1. **Missing `cmdline.txt`** -- The boot config references `cmdline.txt` but the image only ships `cmdline_a.txt`, so the kernel boots without a `root=` parameter and can't find the root filesystem.
-
-2. **Config filter bug** -- `config.txt` uses `[boot_partition=N]` conditionals without a closing `[all]`, causing all kernel/overlay settings to only apply when booting from partition B.
-
-3. **16K page kernel vs 4K binaries** -- The stock kernel uses 16K memory pages, but the Buildroot userspace binaries are compiled with 4K page alignment. The kernel's ELF loader rejects every binary with `EINVAL`, including `/sbin/init`.
-
-## Prerequisites
-
-- A SystemCore Beta SD card image (flashed via the standard SystemCore flashing process)
-- A Linux system for cross-compiling (Ubuntu/Debian recommended, WSL2 works)
-- ~4GB disk space for the kernel source and build
+Run [Limelight SystemCore OS](https://github.com/LimelightVision/systemcore-os-public) on a standard Raspberry Pi 5 Model B instead of the Compute Module 5 it was designed for.
 
 ## Quick Start
-
-### 1. Build the kernel
 
 ```bash
 git clone https://github.com/netarcx/systemcore-rpi5-guide.git
 cd systemcore-rpi5-guide
-./build-kernel.sh
+sudo ./build-image.sh
 ```
 
-This takes 15-30 minutes depending on your CPU. It will:
-- Clone the Raspberry Pi kernel source (rpi-6.6.y branch)
-- Configure it for BCM2712 (Pi 5) with **4K pages**
-- Cross-compile the kernel, modules, and device trees
-- Package everything into the `output/` directory
-
-### 2. Prepare the SD card
-
-Insert your SystemCore SD card and mount the **boot partition** (the small FAT32 partition, usually the first one).
-
-### 3. Replace boot files
-
-Copy the patched boot configuration files to the boot partition:
+This produces `systemcore-pi5b-beta9.img` — flash it to an SD card and boot:
 
 ```bash
-# Back up originals
-cp /path/to/boot/config.txt /path/to/boot/config.txt.bak
-cp /path/to/boot/Image /path/to/boot/Image.bak
-
-# Copy patched boot config
-cp boot/config.txt /path/to/boot/config.txt
-cp boot/cmdline.txt /path/to/boot/cmdline.txt
-cp boot/cmdline_b.txt /path/to/boot/cmdline_b.txt
-cp boot/autoboot.txt /path/to/boot/autoboot.txt
-
-# Copy the new kernel and device trees
-cp output/kernel_2712.img /path/to/boot/kernel_2712.img
-cp output/bcm2712*.dtb /path/to/boot/
-cp output/overlays/* /path/to/boot/overlays/
-
-# Remove the old CM5 kernel (frees space on the small boot partition)
-rm /path/to/boot/Image
+sudo dd if=systemcore-pi5b-beta9.img of=/dev/sdX bs=4M status=progress
 ```
 
-### 4. Install kernel modules (optional)
+Insert the SD card into your Pi 5 and power on. No further configuration needed.
 
-If you need full hardware support, install the matching kernel modules on the root partition:
+## What `build-image.sh` does
+
+The script automates everything needed to convert the upstream CM5 image into a Pi 5B-compatible image:
+
+1. **Downloads** the upstream SystemCore Beta 9 image from GitHub (~1.6GB, cached after first download)
+2. **Builds a 4K-page kernel** from the rpi-6.6.y branch (15-30 min, cached after first build)
+3. **Patches the boot partition** — fixes config, enables HDMI, installs kernel + device trees
+4. **Patches both rootfs partitions** (A/B) — installs kernel modules, Pico flasher, CAN adapter support
+
+Options:
+- `--rebuild-kernel` — force a kernel rebuild even if one already exists
+
+## What gets patched
+
+### Boot fixes (required for Pi 5B to boot at all)
+
+| Issue | Fix |
+|-------|-----|
+| Missing `cmdline.txt` | Created — image only ships `cmdline_a.txt` but `config.txt` references `cmdline.txt` |
+| Config filter bug | Added `[all]` after `[boot_partition=N]` conditionals so settings apply to both A/B partitions |
+| 16K-page kernel | Rebuilt with 4K pages — Buildroot binaries need 4K ELF alignment, 16K kernel rejects them |
+
+### HDMI output
+
+The stock image disables all display output (headless for Limelight hardware). The build script enables HDMI for debugging by commenting out `hdmi_ignore_hotplug`, `hdmi_blanking`, `ignore_lcd` and setting `display_auto_detect=1`.
+
+### SPI CAN overlays disabled
+
+The CM5 carrier board has 5 MCP2518FD SPI CAN controllers. The Pi 5B has none of this hardware, so the SPI CAN overlay lines are commented out to keep the boot log clean.
+
+### Pico flasher (`flash-pico.sh`)
+
+The stock `picoflasherprocess` binary only flashes Pico microcontrollers connected to the Limelight's internal USB controller (`xhci-hcd.0`). On Pi 5B, external USB is `xhci-hcd.1`, so external Picos are rejected.
+
+The build script replaces it with `flash-pico.sh` via a systemd override. This script:
+- Polls for any Pico in BOOTSEL mode on any USB port (vendor ID `2e8a`)
+- Mounts the Pico's mass storage, copies `fw.uf2`, unmounts
+- Works with RP2350 Picos (RP2040 not supported — firmware is RP2350-specific)
+- After flashing, the Pico appears as `cafe:4011` ("Limelight RT Subsystem")
+
+### USB-CAN adapter support (optional)
+
+The stock image expects 5 SPI CAN interfaces (`can_s0` through `can_s4`). The build script adds support for a single USB-to-CAN adapter as a substitute:
+
+- **Udev rule** renames any USB-CAN adapter's network interface to `can_s0`
+- **canbusprocess override** waits up to 30 seconds for `can_s0`, configures it at 1Mbps
+- **canbuswatchdog override** watches `can_s0` only
+- **robot.service override** waits 30 seconds for CAN, starts regardless
+
+If no CAN adapter is plugged in, all services time out gracefully and the robot starts anyway. If an adapter is plugged in later, the canbusprocess service will pick it up on its next restart cycle.
+
+Compatible with any SocketCAN-supported USB adapter (candleLight/canable, PEAK, EMS, etc.).
+
+### Wireless regulatory database
+
+The stock image may be missing `regulatory.db`, which tells the kernel which WiFi channels are legal in your country. The build script installs the US regulatory database so WiFi works correctly (paired with `cfg80211.ieee80211_regdom=US` in the kernel cmdline).
+
+### Kernel modules
+
+The stock 16K-page kernel modules won't load under the 4K-page kernel. The build script installs matching modules built from the same kernel source, including `gs_usb` for USB-CAN adapter support.
+
+## Known limitations
+
+- **RP2350 firmware faults** — After flashing, the Pico firmware reports faults for hardware it expects on the carrier board (BROWNOUT, IMU, DISPLAY, CAN, RSL). These are cosmetic — USB communication works fine. The firmware is closed-source so these cannot be fixed.
+- **RP2040 not supported** — `fw.uf2` is RP2350-specific. An RP2040 Pico will accept the copy but reboot back to BOOTSEL in a loop.
+- **Single CAN bus** — Only one USB-CAN adapter is supported (mapped to `can_s0`). The stock 5-bus SPI CAN setup requires the carrier board.
+- **USB gadget mode** — The `dwc2` overlay behavior may differ between CM5 and Pi 5B.
+
+## Project layout
+
+```
+build-image.sh          - End-to-end image builder (run with sudo)
+build-kernel.sh         - Cross-compiles 4K-page kernel for Pi 5
+boot/                   - Boot configs for Beta 7 (legacy)
+boot9/                  - Boot configs for Beta 9 (used by build-image.sh)
+  config.txt            - Full Pi 5 config with CAN overlays, USB gadget, etc.
+  cmdline.txt           - Kernel cmdline for rootfs A
+  cmdline_b.txt         - Kernel cmdline for rootfs B
+  autoboot.txt          - A/B boot partition selection
+netboot/                - Network boot setup (development/debugging)
+  flash-pico.sh         - Pico flasher replacement (installed into image)
+  setup-netboot.sh      - Sets up TFTP + NFS on WSL2 for netboot
+  cmdline_nfs.txt       - Kernel cmdline template for NFS root
+```
+
+Files not tracked in git (generated/downloaded):
+```
+cache/                  - Downloaded upstream image zip (~1.6GB)
+rpi-linux/              - Kernel source tree (~2.8GB, cloned by build-kernel.sh)
+systemcore-pi5b-beta9.img - Output image (~10GB)
+netboot/tftpboot/       - TFTP boot files (kernel, DTBs, overlays)
+netboot/nfsroot/        - NFS root mount point
+```
+
+## Network boot (development)
+
+For iterative development, the Pi 5 can netboot from a WSL2 host via TFTP + NFS:
 
 ```bash
-# Mount the root partition (partition 2)
-sudo mount /dev/sdX2 /mnt/rootfs
-
-# Extract modules
-sudo tar xzf output/modules-*.tar.gz -C /mnt/rootfs/
-
-sudo umount /mnt/rootfs
+sudo ./netboot/setup-netboot.sh
 ```
 
-### 5. Boot
+This installs `tftpd-hpa` and `nfs-kernel-server`, configures exports, and prints Pi 5 EEPROM settings. WSL2 must use **mirrored networking** mode (set `networkingMode=mirrored` in `%USERPROFILE%\.wslconfig`).
 
-Insert the SD card into your Pi 5 and power on. The SystemCore should boot normally.
+## Prerequisites
 
-## What changed
-
-### config.txt
-| Change | Why |
-|--------|-----|
-| Added `[all]` after `[boot_partition]` conditionals | Ensures kernel, overlay, and hardware settings apply to both A/B partitions |
-| Changed `kernel=Image` to `kernel=kernel_2712.img` | Loads the Pi 5-compatible kernel |
-| Commented out `dtoverlay=pi3-disable-bt` | This overlay doesn't exist on Pi 5; `disable-bt` already handles it |
-
-### cmdline.txt
-| Change | Why |
-|--------|-----|
-| Created the file (was missing entirely) | `config.txt` references `cmdline.txt` for partition A boot, but only `cmdline_a.txt` existed |
-| Added `rootdelay=5` | Gives the Pi 5's PCIe-attached RP1 SD controller time to initialize |
-
-### Kernel
-| Change | Why |
-|--------|-----|
-| Rebuilt from `bcm2712_defconfig` | Targets Pi 5 Model B hardware (BCM2712 SoC) |
-| Switched from 16K to 4K pages | SystemCore's Buildroot binaries use 4K ELF alignment; 16K page kernels reject them with EINVAL |
-
-## Limitations
-
-- The CAN bus overlays (`sc-mcp2518-*`) are designed for the SystemCore hardware. On a bare Pi 5 without the SystemCore carrier board, CAN bus functionality won't work (but the system will still boot).
-- USB gadget mode (`dwc2` overlay) behavior may differ between the CM5 and Pi 5B.
-- Kernel modules from the original SystemCore image won't load since the kernel version differs. Use the modules built by `build-kernel.sh` for full hardware support.
+- Linux host for building (Ubuntu/Debian, WSL2 works)
+- `aarch64-linux-gnu-gcc` cross-compiler (installed automatically by `build-kernel.sh`)
+- ~15GB free disk space (kernel source + images)
+- `sudo` access (for loop-mounting image partitions)
 
 ## Tested on
 
 - Raspberry Pi 5 Model B (4GB/8GB)
-- SystemCore Beta 7 (Limelight_SYSTEMCOREBETA-7)
-- Kernel: Linux 6.6.78 (rpi-6.6.y branch, 4K pages, ARM64)
+- SystemCore Beta 9 (`limelightosr-beta-9-12`)
+- Kernel: Linux 6.6.78-v8-16k+ (rpi-6.6.y branch, 4K pages, ARM64)
+- Host: WSL2 on Windows 11
 
 ## License
 
-The kernel is licensed under GPL-2.0 (same as the Linux kernel). Boot configuration files are provided as-is.
+The kernel is licensed under GPL-2.0 (same as the Linux kernel). Boot configuration files and scripts are provided as-is.
