@@ -1,22 +1,29 @@
 #!/bin/bash
 set -euo pipefail
 
+PI5B_VERSION="v1"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KERNEL_DIR="${SCRIPT_DIR}/rpi-linux"
-BOOT_DIR="${SCRIPT_DIR}/boot9"
 FLASH_PICO="${SCRIPT_DIR}/netboot/flash-pico.sh"
 REGDB_DEB="${SCRIPT_DIR}/beta9/wireless-regdb_2025.10.07-0ubuntu1~24.04.1_all.deb"
 
-PI5B_VERSION="v2"
+IMAGE_URL="https://github.com/LimelightVision/systemcore-os-public/releases/download/limelightosr-beta-10-139/limelightsystemcorebetacm5-limelightosr-beta-10.zip"
+IMAGE_ZIP="${SCRIPT_DIR}/cache/limelightsystemcorebetacm5-limelightosr-beta-10.zip"
+BUILD_IMG="${SCRIPT_DIR}/systemcore-pi5b-beta10.img"
+OUTPUT_IMG="${SCRIPT_DIR}/systemcore-pi5b-beta10-${PI5B_VERSION}.img"
 
-IMAGE_URL="https://github.com/LimelightVision/systemcore-os-public/releases/download/limelightosr-beta-9-12/limelightsystemcorebetacm5-limelightosr-beta-9.zip"
-IMAGE_ZIP="${SCRIPT_DIR}/cache/limelightsystemcorebetacm5-limelightosr-beta-9.zip"
-BUILD_IMG="${SCRIPT_DIR}/systemcore-pi5b-beta9.img"
-OUTPUT_IMG="${SCRIPT_DIR}/systemcore-pi5b-beta9-${PI5B_VERSION}.img"
-
-BOOT_OFF=$((1 * 512))
-ROOT_A_OFF=$((131073 * 512))
-ROOT_B_OFF=$((10616833 * 512))
+# Beta 10 partition layout:
+#   p1: boot selector (FAT32, 16M)  — autoboot.txt, config.txt (empty)
+#   p2: boot A (FAT32, 64M)         — kernel, DTBs, overlays, config.txt, cmdline.txt -> rootfs p5
+#   p3: boot B (FAT32, 64M)         — kernel, DTBs, overlays, config.txt, cmdline.txt -> rootfs p6
+#   p4: extended
+#   p5: rootfs A (ext4, 7G)
+#   p6: rootfs B (ext4, 7G)
+BOOT_A_OFF=$((34816 * 512))
+BOOT_B_OFF=$((165888 * 512))
+ROOT_A_OFF=$((299008 * 512))
+ROOT_B_OFF=$((14981120 * 512))
 
 # --- Step 1: Preflight ---
 
@@ -32,16 +39,12 @@ for cmd in wget unzip mount umount sed; do
     fi
 done
 
-if [ ! -d "$BOOT_DIR" ]; then
-    echo "ERROR: boot9/ directory not found"
-    exit 1
-fi
 if [ ! -f "$FLASH_PICO" ]; then
     echo "ERROR: netboot/flash-pico.sh not found"
     exit 1
 fi
 
-echo "=== SystemCore Pi 5B Image Builder ==="
+echo "=== SystemCore Pi 5B Image Builder (Beta 10) ==="
 echo ""
 
 # --- Step 2: Download upstream image ---
@@ -49,7 +52,7 @@ echo ""
 mkdir -p "${SCRIPT_DIR}/cache"
 
 if [ ! -f "$IMAGE_ZIP" ]; then
-    echo "[1/6] Downloading upstream SystemCore Beta 9 image (~1.6GB)..."
+    echo "[1/6] Downloading upstream SystemCore Beta 10 image..."
     wget -c -O "$IMAGE_ZIP" "$IMAGE_URL"
 else
     echo "[1/6] Upstream image already cached."
@@ -85,6 +88,7 @@ MODULES_STAGING="${SCRIPT_DIR}/cache/modules"
 KVER=$(cat "${KERNEL_DIR}/include/config/kernel.release")
 if [ ! -d "${MODULES_STAGING}/lib/modules/${KVER}/kernel" ]; then
     echo "  Installing kernel modules to staging..."
+    rm -rf "${MODULES_STAGING}"
     make -C "$KERNEL_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
         INSTALL_MOD_PATH="$MODULES_STAGING" modules_install
 fi
@@ -92,41 +96,54 @@ rm -f "${MODULES_STAGING}/lib/modules/${KVER}/build"
 rm -f "${MODULES_STAGING}/lib/modules/${KVER}/source"
 echo "  Modules staged: ${KVER} ($(du -sh "${MODULES_STAGING}/lib/modules/${KVER}" | cut -f1))"
 
-# --- Step 4: Patch boot partition ---
+# --- Step 4: Patch boot partitions (A and B) ---
 
-echo "[4/6] Patching boot partition..."
-BOOT_MNT=$(mktemp -d)
-mount -o loop,offset=${BOOT_OFF} "$BUILD_IMG" "$BOOT_MNT"
+patch_boot() {
+    local MNT="$1"
+    local LABEL="$2"
 
-cp "$BOOT_DIR/config.txt" "$BOOT_MNT/config.txt"
-cp "$BOOT_DIR/cmdline.txt" "$BOOT_MNT/cmdline.txt"
-cp "$BOOT_DIR/cmdline_b.txt" "$BOOT_MNT/cmdline_b.txt"
-cp "$BOOT_DIR/autoboot.txt" "$BOOT_MNT/autoboot.txt"
+    # Enable HDMI output
+    sed -i 's/^hdmi_ignore_hotplug=1/#hdmi_ignore_hotplug=1/' "$MNT/config.txt"
+    sed -i 's/^hdmi_ignore_edid=0xa5000080/#hdmi_ignore_edid=0xa5000080/' "$MNT/config.txt"
+    sed -i 's/^hdmi_blanking=2/#hdmi_blanking=2/' "$MNT/config.txt"
+    sed -i 's/^ignore_lcd=1/#ignore_lcd=1/' "$MNT/config.txt"
+    sed -i 's/^display_auto_detect=0/display_auto_detect=1/' "$MNT/config.txt"
 
-# Enable HDMI output
-sed -i 's/^hdmi_ignore_hotplug=1/#hdmi_ignore_hotplug=1/' "$BOOT_MNT/config.txt"
-sed -i 's/^hdmi_ignore_edid=0xa5000080/#hdmi_ignore_edid=0xa5000080/' "$BOOT_MNT/config.txt"
-sed -i 's/^hdmi_blanking=2/#hdmi_blanking=2/' "$BOOT_MNT/config.txt"
-sed -i 's/^ignore_lcd=1/#ignore_lcd=1/' "$BOOT_MNT/config.txt"
-sed -i 's/^display_auto_detect=0/display_auto_detect=1/' "$BOOT_MNT/config.txt"
+    # Comment out SPI CAN overlays (no SPI CAN hardware on Pi 5B)
+    sed -i '/^dtoverlay=spi[0-9]/s/^/#/' "$MNT/config.txt"
+    sed -i '/^dtoverlay=sc-mcp2518/s/^/#/' "$MNT/config.txt"
 
-# Comment out SPI CAN overlays (no SPI CAN hardware on Pi 5B)
-sed -i '/^dtoverlay=spi[0-9]/s/^/#/' "$BOOT_MNT/config.txt"
-sed -i '/^dtoverlay=sc-mcp2518/s/^/#/' "$BOOT_MNT/config.txt"
+    # Replace 16K-page kernel with our 4K-page build
+    cp "$KERNEL_IMAGE" "$MNT/Image"
 
-# Replace 16K-page kernel with our 4K-page build
-cp "$KERNEL_IMAGE" "$BOOT_MNT/Image"
-echo "  Installed 4K-page kernel"
+    # Install matching device trees and overlays
+    cp "$KERNEL_DIR"/arch/arm64/boot/dts/broadcom/bcm2712*.dtb "$MNT/"
+    cp "$KERNEL_DIR"/arch/arm64/boot/dts/overlays/*.dtb* "$MNT/overlays/" 2>/dev/null || true
 
-# Install matching device trees and overlays
-cp "$KERNEL_DIR"/arch/arm64/boot/dts/broadcom/bcm2712*.dtb "$BOOT_MNT/"
-cp "$KERNEL_DIR"/arch/arm64/boot/dts/overlays/*.dtb* "$BOOT_MNT/overlays/" 2>/dev/null || true
-echo "  Installed device trees and overlays"
+    # Add panic=0 and wifi regdom to cmdline if not already present
+    if ! grep -q "panic=" "$MNT/cmdline.txt"; then
+        sed -i 's/$/ panic=0/' "$MNT/cmdline.txt"
+    fi
+    if ! grep -q "cfg80211" "$MNT/cmdline.txt"; then
+        sed -i 's/$/ cfg80211.ieee80211_regdom=US/' "$MNT/cmdline.txt"
+    fi
 
-echo "  Boot configs installed, HDMI enabled, SPI CAN disabled"
+    echo "  [$LABEL] Kernel, DTBs, HDMI enabled, SPI CAN disabled"
+}
 
-umount "$BOOT_MNT"
-rmdir "$BOOT_MNT"
+echo "[4/6] Patching boot partitions..."
+
+BOOT_A_MNT=$(mktemp -d)
+mount -o loop,offset=${BOOT_A_OFF} "$BUILD_IMG" "$BOOT_A_MNT"
+patch_boot "$BOOT_A_MNT" "boot_a"
+umount "$BOOT_A_MNT"
+rmdir "$BOOT_A_MNT"
+
+BOOT_B_MNT=$(mktemp -d)
+mount -o loop,offset=${BOOT_B_OFF} "$BUILD_IMG" "$BOOT_B_MNT"
+patch_boot "$BOOT_B_MNT" "boot_b"
+umount "$BOOT_B_MNT"
+rmdir "$BOOT_B_MNT"
 
 # --- Step 5: Patch rootfs A and B ---
 
@@ -178,13 +195,15 @@ ExecStart=/bin/bash -c '\
   fi; \
   echo "can_s0 found, configuring..."; \
   ip link set can_s0 down 2>/dev/null; \
-  ip link set can_s0 type can bitrate 1000000; \
+  ip link set can_s0 type can bitrate 1000000 dbitrate 5000000 fd on; \
   ip link set can_s0 txqueuelen 1000; \
   ip link set can_s0 up; \
-  echo "can_s0 up at 1Mbps"; \
-  sleep infinity'
-Restart=on-failure
-RestartSec=10
+  echo "can_s0 up at 1Mbps/5Mbps CAN FD"; \
+  cansend can_s0 000#00 2>/dev/null; \
+  while ip link show can_s0 >/dev/null 2>&1; do sleep 2; done; \
+  echo "can_s0 disappeared, restarting..."'
+Restart=always
+RestartSec=3
 EOF
 
     # canbuswatchdog: only watch can_s0, skip if not present
@@ -208,8 +227,7 @@ ExecStartPre=/bin/bash -c 'echo "Waiting for can_s0 (30s)..."; for i in $(seq 1 
 EOF
     echo "  [$LABEL] Installed CAN adapter support (optional, 30s timeout)"
 
-    # e) Wireless regulatory database (extract to /usr/lib/firmware directly
-    #    to avoid dpkg-deb -x destroying the /lib -> usr/lib symlink)
+    # d) Wireless regulatory database
     if [ -f "$REGDB_DEB" ]; then
         REGDB_TMP=$(mktemp -d)
         dpkg-deb -x "$REGDB_DEB" "$REGDB_TMP"
@@ -217,6 +235,21 @@ EOF
         cp "$REGDB_TMP/lib/firmware/"* "$MNT/usr/lib/firmware/"
         rm -rf "$REGDB_TMP"
         echo "  [$LABEL] Installed wireless-regdb (regulatory.db)"
+    fi
+
+    # e) Unlock WLAN0 Access Point settings in dashboard
+    local DASHBOARD_JS=$(find "$MNT/var/www/html/static/js" -name 'main.*.js' 2>/dev/null | head -1)
+    if [ -n "$DASHBOARD_JS" ]; then
+        # Unlock wlan0 fields (disabled:o||a -> disabled:o where a="wlan0"===e)
+        sed -i 's/disabled:o||a/disabled:o/g' "$DASHBOARD_JS"
+        # Remove forced wlan0 overrides on save (let user-entered values persist)
+        sed -i 's/,{static_ip:"172\.30\.0\.1",gateway:"172\.30\.0\.1",use_dhcp:!1}/,{}/g' "$DASHBOARD_JS"
+        echo "  [$LABEL] Unlocked WLAN0 AP settings in dashboard"
+
+        # Add fault count reset button to header fault tooltip
+        sed -i 's/faultCounts:t\.fc||\[0,0,0,0,0,0\]/faultCounts:(window.__rawFC=t.fc||[0,0,0,0,0,0]).map(function(v,j){return Math.max(0,v-((window.__faultBL||[])[j]||0))})/g' "$DASHBOARD_JS"
+        sed -i 's/"historical-"\.concat(t))}))\]/"historical-".concat(t))})),\(0,xo.jsx\)("div",{style:{marginTop:"8px",textAlign:"center"},children:\(0,xo.jsx\)("button",{onClick:function(){window.__faultBL=window.__rawFC?window.__rawFC.slice():[]},style:{fontSize:"11px",padding:"2px 8px",cursor:"pointer",background:"#333",color:"#fff",border:"1px solid #666",borderRadius:"3px"},children:"Reset Fault Counts"}\)}\)]/g' "$DASHBOARD_JS"
+        echo "  [$LABEL] Added fault count reset button"
     fi
 }
 
@@ -241,7 +274,7 @@ mv "$BUILD_IMG" "$OUTPUT_IMG"
 echo "[6/6] Done!"
 echo ""
 echo "============================================"
-echo "  SystemCore Pi 5B image ready! (${PI5B_VERSION})"
+echo "  SystemCore Pi 5B image ready! (Beta 10 ${PI5B_VERSION})"
 echo "============================================"
 echo ""
 echo "  Image:   $OUTPUT_IMG"
