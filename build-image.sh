@@ -199,7 +199,8 @@ ExecStart=/bin/bash -c '\
   ip link set can_s0 txqueuelen 1000; \
   ip link set can_s0 up; \
   echo "can_s0 up at 1Mbps/5Mbps CAN FD"; \
-  cansend can_s0 000#00 2>/dev/null; \
+  sleep 1; \
+  cansend can_s0 000#00 && echo "CAN discovery frame sent" || echo "cansend failed"; \
   while ip link show can_s0 >/dev/null 2>&1; do sleep 2; done; \
   echo "can_s0 disappeared, restarting..."'
 Restart=always
