@@ -195,12 +195,20 @@ ExecStart=/bin/bash -c '\
     done; \
     sleep 1; \
   done; \
+  MAP=/etc/can_port_map; touch $MAP; \
   for dev in /sys/class/net/*/type; do \
     [ "$(cat $dev 2>/dev/null)" = "280" ] || continue; \
     IFACE=$(basename $(dirname $dev)); \
     [ -e "/sys/class/net/$IFACE/device/driver" ] || continue; \
     PORT=$(basename $(readlink -f /sys/class/net/$IFACE/device/.. 2>/dev/null)); \
-    PORT_NUM=$(echo $PORT | cut -d- -f2); CAN_IDX=$((PORT_NUM - 1)); \
+    CAN_IDX=$(grep "^$PORT " $MAP 2>/dev/null | cut -d" " -f2); \
+    if [ -z "$CAN_IDX" ]; then \
+      MAX=$(cut -d" " -f2 $MAP 2>/dev/null | sort -n | tail -1); \
+      [ -z "$MAX" ] && MAX=-1; \
+      CAN_IDX=$((MAX + 1)); \
+      echo "$PORT $CAN_IDX" >> $MAP; \
+      echo "New port $PORT mapped to can_s$CAN_IDX"; \
+    fi; \
     [ "$IFACE" = "can_s$CAN_IDX" ] && continue; \
     ip link set $IFACE down 2>/dev/null; \
     ip link set "can_s$CAN_IDX" down 2>/dev/null; \
