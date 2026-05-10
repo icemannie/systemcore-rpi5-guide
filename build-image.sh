@@ -195,27 +195,18 @@ ExecStart=/bin/bash -c '\
     done; \
     sleep 1; \
   done; \
-  IDX=0; \
   for dev in /sys/class/net/*/type; do \
     [ "$(cat $dev 2>/dev/null)" = "280" ] || continue; \
     IFACE=$(basename $(dirname $dev)); \
     [ -e "/sys/class/net/$IFACE/device/driver" ] || continue; \
-    ip link set $IFACE down 2>/dev/null; \
-    ip link set $IFACE name "_can_tmp$IDX" 2>/dev/null; \
-    IDX=$((IDX+1)); \
-  done; \
-  SORTED=""; \
-  for dev in /sys/class/net/_can_tmp*/type; do \
-    IFACE=$(basename $(dirname $dev)); \
     PORT=$(basename $(readlink -f /sys/class/net/$IFACE/device/.. 2>/dev/null)); \
-    SORTED="$SORTED $PORT:$IFACE"; \
-  done; \
-  NEXT=0; \
-  for entry in $(echo "$SORTED" | tr " " "\\n" | sort); do \
-    [ -z "$entry" ] && continue; \
-    IFACE=${entry#*:}; PORT=${entry%%:*}; \
-    ip link set $IFACE name "can_s$NEXT" && echo "Renamed -> can_s$NEXT (USB port $PORT)"; \
-    NEXT=$((NEXT+1)); \
+    PORT_NUM=$(echo $PORT | cut -d- -f2); CAN_IDX=$((PORT_NUM - 1)); \
+    [ "$IFACE" = "can_s$CAN_IDX" ] && continue; \
+    ip link set $IFACE down 2>/dev/null; \
+    ip link set "can_s$CAN_IDX" down 2>/dev/null; \
+    ip link set "can_s$CAN_IDX" name "_can_swap" 2>/dev/null; \
+    ip link set $IFACE name "can_s$CAN_IDX" && echo "Renamed $IFACE -> can_s$CAN_IDX (USB port $PORT)"; \
+    ip link set "_can_swap" name "$IFACE" 2>/dev/null; \
   done; \
   IFACES=$(ls -d /sys/class/net/can_s* 2>/dev/null | xargs -n1 basename); \
   if [ -z "$IFACES" ]; then \
