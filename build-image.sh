@@ -172,36 +172,38 @@ EOF
 
     # c) CAN adapter support (multi-adapter, optional — graceful timeout)
 
-    # Helper script: assigns sequential can_sN names for USB-CAN adapters
-    cat > "$MNT/usr/local/bin/next-can-name.sh" << 'SCRIPT'
-#!/bin/bash
-for i in 0 1 2 3 4; do
-    if ! ip link show "can_s$i" >/dev/null 2>&1; then
-        echo "can_s$i"
-        exit 0
-    fi
-done
-echo "can_s5"
-SCRIPT
-    chmod +x "$MNT/usr/local/bin/next-can-name.sh"
-
-    # Udev rules: rename USB-CAN adapters to can_s0, can_s1, etc. and restart CAN service
+    # Udev rule: trigger CAN service restart when USB-CAN adapter is plugged in
     cat > "$MNT/etc/udev/rules.d/90-usb-can-rename.rules" << 'EOF'
-SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", PROGRAM="/usr/local/bin/next-can-name.sh", NAME="%c"
 SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", RUN+="/bin/systemctl restart limelight_canbusprocess.service"
 EOF
 
-    # canbusprocess: configure ALL can_s* interfaces, CAN FD 1Mbps/5Mbps
+    # canbusprocess: find, rename, and configure ALL CAN interfaces
     mkdir -p "$MNT/etc/systemd/system/limelight_canbusprocess.service.d"
     cat > "$MNT/etc/systemd/system/limelight_canbusprocess.service.d/override.conf" << 'EOF'
 [Service]
 ExecStart=
 ExecStart=/bin/bash -c '\
   modprobe gs_usb 2>/dev/null; \
+  for dev in /sys/class/net/can_s*/type; do \
+    IFACE=$(basename $(dirname $dev)); \
+    [ -e "/sys/class/net/$IFACE/device/driver" ] || ip link delete $IFACE 2>/dev/null; \
+  done; \
   echo "Waiting for CAN adapters (30s timeout)..."; \
   for i in $(seq 1 30); do \
-    ls /sys/class/net/can_s* >/dev/null 2>&1 && break; \
+    for dev in /sys/class/net/*/type; do \
+      [ "$(cat $dev 2>/dev/null)" = "280" ] && break 2; \
+    done; \
     sleep 1; \
+  done; \
+  NEXT=0; \
+  for dev in /sys/class/net/*/type; do \
+    [ "$(cat $dev 2>/dev/null)" = "280" ] || continue; \
+    IFACE=$(basename $(dirname $dev)); \
+    case $IFACE in can_s[0-9]*) continue ;; esac; \
+    while [ -d "/sys/class/net/can_s$NEXT" ]; do NEXT=$((NEXT+1)); done; \
+    ip link set $IFACE down 2>/dev/null; \
+    ip link set $IFACE name "can_s$NEXT" && echo "Renamed $IFACE -> can_s$NEXT"; \
+    NEXT=$((NEXT+1)); \
   done; \
   IFACES=$(ls -d /sys/class/net/can_s* 2>/dev/null | xargs -n1 basename); \
   if [ -z "$IFACES" ]; then \
@@ -211,10 +213,14 @@ ExecStart=/bin/bash -c '\
   for iface in $IFACES; do \
     echo "Configuring $iface..."; \
     ip link set $iface down 2>/dev/null; \
-    ip link set $iface type can bitrate 1000000 dbitrate 5000000 fd on; \
+    if ip link set $iface type can bitrate 1000000 dbitrate 5000000 fd on 2>/dev/null; then \
+      echo "$iface: CAN FD (1Mbps/5Mbps)"; \
+    else \
+      ip link set $iface type can bitrate 1000000 2>/dev/null; \
+      echo "$iface: standard CAN (1Mbps)"; \
+    fi; \
     ip link set $iface txqueuelen 1000; \
     ip link set $iface up; \
-    echo "$iface up at 1Mbps/5Mbps CAN FD"; \
   done; \
   sleep 1; \
   for iface in $IFACES; do \
@@ -223,7 +229,7 @@ ExecStart=/bin/bash -c '\
   COUNT=$(echo "$IFACES" | wc -w); \
   echo "$COUNT CAN adapter(s) configured, monitoring..."; \
   while [ "$(ls -d /sys/class/net/can_s* 2>/dev/null | wc -l)" -ge "$COUNT" ]; do sleep 2; done; \
-  echo "CAN adapter removed, restarting..."'
+  echo "CAN adapter change detected, restarting..."'
 Restart=always
 RestartSec=3
 EOF
