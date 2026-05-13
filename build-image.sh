@@ -172,9 +172,12 @@ EOF
 
     # c) CAN adapter support (multi-adapter, optional — graceful timeout)
 
-    # Udev rule: trigger CAN service restart when USB-CAN adapter is plugged in
+    # Udev rule: trigger CAN service restart when USB-CAN adapter is plugged in.
+    # SUBSYSTEMS=="usb" prevents the rule from matching vcan placeholders we
+    # create from within the service itself — otherwise canbusprocess restarts
+    # itself in an infinite loop the moment it adds a vcan.
     cat > "$MNT/etc/udev/rules.d/90-usb-can-rename.rules" << 'EOF'
-SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", RUN+="/bin/systemctl restart limelight_canbusprocess.service"
+SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", SUBSYSTEMS=="usb", RUN+="/bin/systemctl restart limelight_canbusprocess.service"
 EOF
 
     # canbusprocess: find, rename, and configure ALL CAN interfaces
@@ -217,28 +220,33 @@ ExecStart=/bin/bash -c '\
     ip link set "_can_swap" name "$IFACE" 2>/dev/null; \
   done; \
   IFACES=$(ls -d /sys/class/net/can_s* 2>/dev/null | xargs -n1 basename); \
-  if [ -z "$IFACES" ]; then \
-    echo "No CAN adapters found after 30s"; \
-    exit 0; \
+  if [ -n "$IFACES" ]; then \
+    for iface in $IFACES; do \
+      echo "Configuring $iface..."; \
+      ip link set $iface down 2>/dev/null; \
+      if ip link set $iface type can bitrate 1000000 dbitrate 5000000 fd on 2>/dev/null; then \
+        echo "$iface: CAN FD (1Mbps/5Mbps)"; \
+      else \
+        ip link set $iface type can bitrate 1000000 2>/dev/null; \
+        echo "$iface: standard CAN (1Mbps)"; \
+      fi; \
+      ip link set $iface txqueuelen 1000; \
+      ip link set $iface up; \
+    done; \
+    sleep 1; \
+    for iface in $IFACES; do \
+      cansend $iface 000#00 && echo "CAN discovery frame sent on $iface" || echo "cansend failed on $iface"; \
+    done; \
+  else \
+    echo "No USB CAN adapters found after 30s"; \
   fi; \
-  for iface in $IFACES; do \
-    echo "Configuring $iface..."; \
-    ip link set $iface down 2>/dev/null; \
-    if ip link set $iface type can bitrate 1000000 dbitrate 5000000 fd on 2>/dev/null; then \
-      echo "$iface: CAN FD (1Mbps/5Mbps)"; \
-    else \
-      ip link set $iface type can bitrate 1000000 2>/dev/null; \
-      echo "$iface: standard CAN (1Mbps)"; \
-    fi; \
-    ip link set $iface txqueuelen 1000; \
-    ip link set $iface up; \
+  modprobe vcan 2>/dev/null; \
+  for n in 0 1 2 3 4; do \
+    [ -e "/sys/class/net/can_s$n" ] && continue; \
+    ip link add dev can_s$n type vcan 2>/dev/null && ip link set can_s$n up 2>/dev/null && echo "Added vcan placeholder can_s$n (no physical adapter)"; \
   done; \
-  sleep 1; \
-  for iface in $IFACES; do \
-    cansend $iface 000#00 && echo "CAN discovery frame sent on $iface" || echo "cansend failed on $iface"; \
-  done; \
-  COUNT=$(echo "$IFACES" | wc -w); \
-  echo "$COUNT CAN adapter(s) configured, monitoring..."; \
+  COUNT=$(ls -d /sys/class/net/can_s* 2>/dev/null | wc -l); \
+  echo "$COUNT total can_s* interfaces present (USB + vcan placeholders), monitoring..."; \
   while [ "$(ls -d /sys/class/net/can_s* 2>/dev/null | wc -l)" -ge "$COUNT" ]; do sleep 2; done; \
   echo "CAN adapter change detected, restarting..."'
 Restart=always
@@ -265,6 +273,23 @@ ExecStartPre=
 ExecStartPre=/bin/bash -c 'echo "Waiting for CAN adapters (30s)..."; for i in $(seq 1 30); do ls /sys/class/net/can_s* >/dev/null 2>&1 && exit 0; sleep 1; done; echo "No CAN adapters found, starting robot anyway"; exit 0'
 EOF
     echo "  [$LABEL] Installed multi-adapter CAN FD support (optional, 30s timeout)"
+
+    # f) MrcCommDaemon directory.
+    # On real SystemCore hardware, /dev/mrccan/ is created by a kernel module
+    # specific to the carrier board. On Pi 5B that module doesn't exist, so
+    # MrcCommDaemon crash-loops trying to create /dev/mrccan/controldata and
+    # /dev/mrccan/matchinfo. Without MrcCommDaemon running, the HAL waits on
+    # the NT key /Netcomm/Control/ServerReady, times out, and SIGABRTs ~10s
+    # after the Java program starts ("Waiting for server ready failed").
+    # systemd-tmpfiles creates the directory at boot, before mrccomm.service.
+    mkdir -p "$MNT/etc/tmpfiles.d"
+    cat > "$MNT/etc/tmpfiles.d/mrccan.conf" << 'EOF'
+# /dev/mrccan is normally created by a SystemCore-only kernel module.
+# On Pi 5B it must be created manually so MrcCommDaemon can open
+# /dev/mrccan/controldata and /dev/mrccan/matchinfo.
+d /dev/mrccan 0755 root root -
+EOF
+    echo "  [$LABEL] Created /dev/mrccan tmpfile (unblocks MrcCommDaemon)"
 
     # d) Wireless regulatory database
     if [ -f "$REGDB_DEB" ]; then
@@ -325,8 +350,10 @@ echo "    - HDMI output enabled"
 echo "    - SPI CAN overlays disabled (no hardware on Pi 5B)"
 echo "    - flash-pico.sh (auto-flashes RP2350 Pico on any USB port)"
 echo "    - USB-CAN multi-adapter support (can_s0-s4, CAN FD 1Mbps/5Mbps)"
+echo "    - vcan placeholders auto-fill missing can_s0-s4 (HAL requires all 5)"
 echo "    - CAN is optional (30s timeout, robot starts regardless)"
 echo "    - Hot-plug: new adapters auto-named and configured"
+echo "    - /dev/mrccan tmpfile (unblocks MrcCommDaemon -> robot.service)"
 echo "    - Wireless regulatory database (US WiFi channels)"
 echo ""
 echo "  Flash to SD card:"

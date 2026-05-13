@@ -55,16 +55,25 @@ The build script replaces it with `flash-pico.sh` via a systemd override. This s
 
 The stock image expects 5 SPI CAN interfaces (`can_s0` through `can_s4`). The build script adds support for any number of USB-to-CAN adapters:
 
-- **Udev rule** triggers the CAN service restart when an adapter is plugged in
+- **Udev rule** triggers the CAN service restart when an adapter is plugged in. The match is scoped to `SUBSYSTEMS=="usb"` so vcan placeholders (see below) don't re-trigger the service and cause an infinite restart loop.
 - **canbusprocess override** discovers all CAN interfaces, renames them to `can_s0`, `can_s1`, etc., configures each with CAN FD (1Mbps/5Mbps) or falls back to standard CAN (1Mbps)
 - **Persistent port mapping** — each USB port path is mapped to a stable `can_sN` index in `/etc/can_port_map`, so the same physical port always gets the same name regardless of plug order (works with USB hubs)
 - **Discovery frame** — `cansend 000#00` sent on each bus after interface up
 - **Hot-plug** — plugging in a new adapter triggers automatic naming and configuration
+- **vcan placeholders auto-fill missing buses** — the WPILib HAL iterates `can_s0` through `can_s4` and aborts the robot program if any are missing (`ioctl(SIOCGIFINDEX) for CAN can_sN failed with No such device` → `Failed to initialize. Terminating`). After USB-CAN setup, the service creates vcan interfaces for whichever slots have no physical adapter, so 0–4 USB adapters all work.
 - **canbuswatchdog/robot.service overrides** — wait for any CAN adapter, start regardless after 30s
 
-If no CAN adapter is plugged in, all services time out gracefully and the robot starts anyway.
+If no CAN adapter is plugged in, all services time out gracefully and the robot starts anyway (vcan placeholders satisfy the HAL).
 
 Compatible with any SocketCAN-supported USB adapter (candleLight/canable, PEAK, EMS, etc.). Mixed CAN FD and standard CAN adapters work together.
+
+### MrcCommDaemon unblock (`/dev/mrccan/`)
+
+`MrcCommDaemon` is the userspace service that sets the NetworkTables key `/Netcomm/Control/ServerReady`. The WPILib HAL waits on this key during robot startup — if `MrcCommDaemon` isn't running, the Java robot program SIGABRTs ~10 seconds after launch with `Error: Waiting for server ready failed. Restarting app and retrying...` and `terminate called without an active exception`.
+
+The daemon writes its state to `/dev/mrccan/controldata` and `/dev/mrccan/matchinfo`. On real SystemCore hardware that directory is created by a kernel module specific to the carrier board; on Pi 5B the module doesn't exist, so the daemon crash-loops with `Failed to open control data file`.
+
+The build script installs `/etc/tmpfiles.d/mrccan.conf` so systemd-tmpfiles creates `/dev/mrccan/` early in boot, before `mrccomm.service` starts. Both files are then regular files written by the daemon itself.
 
 ### Dashboard patches
 

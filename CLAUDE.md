@@ -39,9 +39,11 @@ Not tracked in git: `rpi-linux/`, `cache/`, `*.img`, `*.zip`, `netboot/tftpboot/
 6. **Persistent CAN naming** — USB port path mapped to stable can_sN index via `/etc/can_port_map`, works with USB hubs
 7. **CAN is optional** — 30s timeout, robot starts regardless of adapter presence
 8. **CAN discovery frame** — `cansend 000#00` sent on each bus after interface up
-9. **Wireless regdb** — regulatory.db installed for US WiFi channel support
-10. **WLAN0 AP settings unlocked** — dashboard JS patched to allow modifying Access Point config
-11. **Fault count reset button** — frontend-only baseline reset added to fault tooltip in dashboard
+9. **vcan placeholders** — canbusprocess fills missing `can_s0..can_s4` slots with vcan interfaces after USB-CAN setup. HAL aborts the robot program if any of the 5 buses is missing (`SIOCGIFINDEX ... No such device`), so this is required for robot.service to start with fewer than 5 physical adapters.
+10. **/dev/mrccan tmpfile** — `/etc/tmpfiles.d/mrccan.conf` creates `/dev/mrccan/` at boot. Without it `MrcCommDaemon` crash-loops on `Failed to open control data file`, never sets the NT key `/Netcomm/Control/ServerReady`, and the HAL SIGABRTs the robot program ~10s after start with `Error: Waiting for server ready failed`.
+11. **Wireless regdb** — regulatory.db installed for US WiFi channel support
+12. **WLAN0 AP settings unlocked** — dashboard JS patched to allow modifying Access Point config
+13. **Fault count reset button** — frontend-only baseline reset added to fault tooltip in dashboard
 
 ## Key technical details
 
@@ -56,13 +58,27 @@ Not tracked in git: `rpi-linux/`, `cache/`, `*.img`, `*.zip`, `netboot/tftpboot/
 - Kernel version: 6.12.87-v8-16k+ (4K pages despite the name)
 - Pi 5B external USB: xhci-hcd.0 (bus 1, ports 1-1 through 1-2)
 - Pico after flash: VID=0xCAFE PID=0x4011 ("Limelight RT Subsystem")
-- CAN udev match: ATTR{type}=="280" (ARPHRD_CAN, matches any CAN netdev)
+- CAN udev match: `ATTR{type}=="280"` (ARPHRD_CAN, matches any CAN netdev). The build's `90-usb-can-rename.rules` adds `SUBSYSTEMS=="usb"` so vcan interfaces (no parent device) don't match — without that constraint, adding a vcan from inside canbusprocess re-triggers canbusprocess and infinite-loops.
 - CAN FD: 1Mbps nominal / 5Mbps data bitrate, falls back to 1Mbps standard CAN if adapter doesn't support FD
 - CAN port mapping persisted to `/etc/can_port_map` (port path -> can_sN index)
+- HAL CAN expectation: WPILib's HAL (`libwpiHal.so`, `_GLOBAL__N_1::SocketCanState::InitializeBuses`) does `SIOCGIFINDEX` on `can_s0` through `can_s4`. ANY missing one → `IllegalStateException: Failed to initialize. Terminating` from `org.wpilib.framework.RobotBase.startRobot`. canbusprocess fills gaps with vcan after USB-CAN setup.
+- HAL netcomm gate: HAL also blocks on NT key `/Netcomm/Control/ServerReady` (string lives in `libwpiHal.so`). The setter is `/usr/bin/MrcCommDaemon` (`mrccomm.service`), which opens `/dev/mrccan/controldata` + `/dev/mrccan/matchinfo` (`O_WRONLY|O_CREAT|O_TRUNC`). On real SystemCore those paths live under a kernel-module-created directory; on Pi 5B the build creates `/dev/mrccan/` via `/etc/tmpfiles.d/mrccan.conf`. Without it: `Failed to open control data file` → mrccomm crash-loops → HAL `Waiting for server ready failed` → SIGABRT (exit 134) ~10s after Java starts.
 - RP2350 firmware faults (BROWNOUT, IMU, DISPLAY, CAN, RSL) are cosmetic — closed-source firmware expects carrier board hardware
 - Dashboard patches: sed on minified React JS (`main.*.js`), applied to both rootfs A and B
 - Interface renaming done in canbusprocess service (NOT udev PROGRAM — `ip link show` is unreliable in udev context)
 - Systemd ExecStart must not use `${VAR##pattern}` syntax — systemd strips `${...}` before bash sees it
+
+## Diagnosing a non-starting robot.service on an already-flashed image
+
+```bash
+sudo journalctl -u robot.service -n 50 --no-pager
+```
+
+| Symptom (journal line) | Cause | Fix |
+| --- | --- | --- |
+| `ioctl(SIOCGIFINDEX) for CAN can_sN failed with No such device` then `Failed to initialize. Terminating` | Slot `can_sN` is missing from `/sys/class/net/` (fewer than 5 USB CAN adapters and the vcan-placeholder logic isn't running) | `sudo modprobe vcan && sudo ip link add dev can_sN type vcan && sudo ip link set can_sN up` for each missing N. If a service is deleting them, check `/etc/udev/rules.d/90-usb-can-rename.rules` — must include `SUBSYSTEMS=="usb"`, else `ip link add` of a vcan re-triggers canbusprocess which has a "delete CAN interfaces without `device/driver`" cleanup that wipes the vcan you just made. |
+| `Error: Waiting for server ready failed. Restarting app and retrying...` then `terminate called without an active exception` and `Aborted (core dumped)` (exit 134) | `MrcCommDaemon` isn't setting `/Netcomm/Control/ServerReady` in NT4 — almost always because it's crash-looping on `Failed to open control data file` | `sudo mkdir -p /dev/mrccan && sudo systemctl restart mrccomm.service`. For persistence write `/etc/tmpfiles.d/mrccan.conf` with `d /dev/mrccan 0755 root root -`. |
+| `Failed to initialize can buses` for `can_d2` (not `can_s2`) | Both `can_s*` AND `can_d*` are probed by the HAL. `can_d0..can_d19` are typically created by stock SystemCore-OS init; if they're missing the image is broken — don't rename `can_d*` interfaces away. | Reboot to let stock init recreate them, or `sudo modprobe vcan && for i in $(seq 0 19); do sudo ip link add dev can_d$i type vcan; sudo ip link set can_d$i up; done` |
 
 ## Dev environment
 
