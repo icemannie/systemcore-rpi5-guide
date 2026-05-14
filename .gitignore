@@ -22,3 +22,7 @@ systemcore-os-public-*/
 
 # Claude Code local settings
 .claude/
+
+# Python bytecode (from the patcher package)
+__pycache__/
+*.pyc

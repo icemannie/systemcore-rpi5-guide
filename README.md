@@ -18,6 +18,48 @@ sudo dd if=systemcore-pi5b-beta10-v1.img of=/dev/sdX bs=4M status=progress
 
 Insert the SD card into your Pi 5 and power on. No further configuration needed.
 
+## Patching new upstream releases (`patch-image.py`)
+
+When WPI/Limelight ships a new SystemCore image and you already have a built 4K kernel cached, you don't need to re-run the full build. Use the patcher instead:
+
+```bash
+# GUI:
+sudo python3 patch-image.py
+
+# Or headless:
+sudo python3 patch-image.py upstream.img -o patched.img
+```
+
+The patcher detects partition offsets dynamically (via `sfdisk`), so it survives layout changes between releases. It applies the same set of patches `build-image.sh` does, but skips the kernel build and image download — typically takes 1–2 minutes instead of 30+.
+
+When upstream bumps the kernel version, fall back to `build-image.sh` (or pass `--kernel-dir` to a tree you've built yourself).
+
+### CLI options
+
+```
+sudo python3 patch-image.py [input.img] [options]
+
+  -o, --output PATH         Output image (default: <input>-pi5b.img)
+  --dry-run                 Log everything but don't modify anything
+  -v, --verbose             Show every shell command
+  --backup                  Copy input to .bak before in-place patching
+  --keep-mounted            Don't unmount partitions on success
+  --no-cleanup-on-error     Leave mounts open if a patch fails (for debugging)
+  --skip-b                  Patch A partitions only, skip B
+  --validate                Re-mount the output and verify expected files
+  --inspect                 Mount partitions, print paths, wait for ENTER
+  --show-partitions         Print partition layout and exit
+  --list-patches            List every patch with a description
+  --only PATCH,PATCH        Apply only these patches (everything else off)
+  --no-<patch>              Skip a single patch (e.g. --no-install-modules)
+```
+
+Run `sudo python3 patch-image.py --list-patches` for the full set of patch names.
+
+### GUI
+
+The GUI is a Tkinter app — zero install on most Linux distros (`apt install python3-tk` if missing). Same option surface as the CLI plus live log streaming, file pickers, and a "Mount and inspect" button that opens the partitions for manual exploration.
+
 ## What `build-image.sh` does
 
 The script automates everything needed to convert the upstream CM5 image into a Pi 5B-compatible image:
@@ -98,6 +140,18 @@ The stock image is missing `regulatory.db`. The build script installs the US reg
 build-image.sh          - End-to-end image builder (run with sudo)
 build-kernel.sh         - Cross-compiles 4K-page kernel for Pi 5
 check-image.sh          - Validates a built image
+patch-image.py          - Standalone patcher for new upstream releases (GUI + CLI)
+patcher/                - Python package for patch-image.py
+  core.py               - Mount + per-patch logic + orchestrator
+  gui.py                - Tkinter GUI
+  cli.py                - argparse entry point
+  resources/            - Drop-in files installed into the rootfs
+    90-usb-can-rename.rules
+    canbusprocess-override.conf
+    canbuswatchdog-override.conf
+    robot-override.conf
+    picoflasher-override.conf
+    mrccan.conf
 boot/                   - Boot configs for Beta 7 (legacy)
 boot9/                  - Boot configs for Beta 9 (legacy)
 netboot/                - Network boot setup (development/debugging)

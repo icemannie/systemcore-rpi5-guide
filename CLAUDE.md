@@ -17,6 +17,12 @@ sudo dd if=systemcore-pi5b-beta10-v1.img of=/dev/sdX bs=4M status=progress
 build-image.sh        - Main script: downloads upstream image, builds kernel, patches everything
 build-kernel.sh       - Cross-compiles 4K-page ARM64 kernel from rpi-6.12.y
 check-image.sh        - Validates a built image (partition layout, kernel, patches)
+patch-image.py        - Standalone patcher for new upstream releases (no kernel rebuild)
+patcher/              - Python package backing patch-image.py
+  core.py             - Partition discovery, mount tracking, per-patch logic, orchestrator
+  gui.py              - Tkinter GUI with live log streaming + per-patch toggles
+  cli.py              - argparse, --dry-run / --inspect / --validate / --only
+  resources/          - Drop-in service overrides + udev rules + tmpfile configs
 boot9/                - Boot partition source files (config.txt, cmdline.txt, etc.)
 netboot/
   flash-pico.sh       - Pico flasher replacement (installed into image by build-image.sh)
@@ -26,6 +32,20 @@ boot/                 - Legacy Beta 7 boot configs (superseded by boot9/)
 beta9/
   apply-patches.sh    - Legacy patch script (superseded by build-image.sh)
 ```
+
+## When to use which tool
+
+| Scenario | Tool |
+| --- | --- |
+| First-time setup (need to build the 4K kernel) | `sudo ./build-image.sh` |
+| New upstream release, kernel unchanged | `sudo python3 patch-image.py upstream.img` |
+| New upstream release, kernel bumped | `sudo ./build-image.sh` (rebuilds kernel, then patches) |
+| Apply only one patch to an existing image for debugging | `sudo python3 patch-image.py img --only install_mrccan` |
+| Inspect what's in a patched image | `sudo python3 patch-image.py img --inspect` (mounts all 4 partitions, prints paths) |
+| Verify a patched image looks right | `sudo python3 patch-image.py img --validate` |
+| See what would happen without actually patching | `sudo python3 patch-image.py img --dry-run -v` |
+
+`patcher/resources/*` is the single source of truth for systemd overrides, udev rules, and tmpfile configs. `build-image.sh` currently inlines copies of these via heredocs — keep them in sync if you change one.
 
 Not tracked in git: `rpi-linux/`, `cache/`, `*.img`, `*.zip`, `netboot/tftpboot/`, `netboot/nfsroot/`
 
