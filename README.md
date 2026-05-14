@@ -58,7 +58,61 @@ Run `sudo python3 patch-image.py --list-patches` for the full set of patch names
 
 ### GUI
 
-The GUI is a Tkinter app — zero install on most Linux distros (`apt install python3-tk` if missing). Same option surface as the CLI plus live log streaming, file pickers, and a "Mount and inspect" button that opens the partitions for manual exploration.
+The GUI is a Tkinter app (`apt install python3-tk` if missing). Launch with no arguments to bring up the window, or pass `--gui` to force GUI even when positional args are given.
+
+```bash
+sudo python3 patch-image.py
+```
+
+The window is laid out top-to-bottom in seven sections:
+
+**1. Image files** — pickers for the input image and the output image. Selecting an input auto-fills the output as `<input>-pi5b.img` next to it (override with the second Browse button).
+
+**2. Source paths** — auto-filled from the repo:
+- `Kernel tree`: path to the built `rpi-linux/` tree (only needed if any kernel/DTB/overlay/module patch is enabled — uncheck all four to patch without a built kernel)
+- `flash-pico.sh`: path to the Pico flasher script that gets installed into `/usr/local/bin/`
+- `wireless-regdb .deb`: path to the regdb Debian package extracted into `/usr/lib/firmware/`
+
+Each path has a Browse button if the default isn't right.
+
+**3. Boot partition patches (A + B)** — checkboxes for the boot-side patches:
+- `Install 4K kernel` / `Install device trees` / `Install overlays` — replace the stock 16K-page kernel with the 4K-page build and matching `bcm2712*.dtb` + overlay files
+- `Enable HDMI` — uncomment the display options in `config.txt`
+- `Disable SPI CAN overlays` — comment out `dtoverlay=spi*` / `dtoverlay=sc-mcp2518` lines (no SPI CAN hardware on Pi 5B)
+- `Add panic=0 + US wifi regdom` — append kernel cmdline params
+
+**4. Rootfs patches (A + B)** — checkboxes for the rootfs-side patches:
+- `Install kernel modules` — copy matching modules into `/usr/lib/modules/$KVER`
+- `Install flash-pico.sh` — install the script + service override that lets external Picos be flashed
+- `USB-CAN udev rule` — install `90-usb-can-rename.rules` (scoped to USB so vcan placeholders don't trigger restart loops)
+- `canbusprocess override (vcan placeholders)` — install the override that names USB-CAN adapters and fills any missing `can_s0..can_s4` slot with a vcan interface (HAL requires all 5)
+- `canbuswatchdog override` — install watchdog override that waits for any `can_s*` instead of requiring all 5
+- `robot.service override` — 30-second CAN wait then start regardless
+- `/dev/mrccan tmpfile (MrcCommDaemon fix)` — install `tmpfiles.d/mrccan.conf` so `MrcCommDaemon` can write its control files at boot (without this the robot program SIGABRTs ~10s after start)
+- `Wireless regulatory database` — install `regulatory.db` so WiFi works on the US regdom
+- `Dashboard: unlock WLAN0 AP` — patch the minified React JS to allow editing Access Point network config
+- `Dashboard: fault count reset button` — add a "Reset Fault Counts" button to the fault tooltip in the header
+
+Hover any checkbox for a tooltip explaining what that patch does.
+
+**5. Debug + advanced** — toggles that change *how* patching runs rather than *what* it does:
+- `Dry run (log only)` — log every operation but don't write anything to the image
+- `Verbose log` — show every shell command (sfdisk, mount, dpkg-deb, etc.)
+- `Backup input image` — copy input to `<input>.bak` before in-place patching (no-op if input ≠ output)
+- `Keep mounted after` — leave the partition loop-mounts open on success so you can poke around with a file manager or shell. Cleanup is your problem.
+- `No cleanup on error` — leave the loop-mounts open if a patch fails, so you can inspect partial state. Use for diagnosing why a patch broke.
+- `Patch A only (skip B)` — only patches the A boot+rootfs, leaves B alone. Useful when testing a patch against just one boot slot.
+- `Validate after patch` — re-mount the output image and verify the expected files (override.conf paths, tmpfile config, flash-pico.sh) are present in both rootfs A and B.
+
+**6. Action buttons:**
+- `Patch image` — apply all enabled patches. Disabled while a job is running.
+- `Inspect (mount only)` — mount every partition (boot A/B, rootfs A/B) on the input or output image and show a dialog with the mount points. Click OK in the dialog when done to unmount everything.
+- `Validate` — re-mount the output (or input) image and verify expected post-patch files are present. Pops up a dialog reporting any missing files.
+- `Show partitions` — print the partition layout (offsets, sizes, detected filesystems, identified boot/root A/B mapping) to the log.
+- `Cancel` — set a cancel flag the worker can observe. Subprocess calls already in flight aren't interrupted, so this is "best effort" rather than instant.
+- `Quit` — close the window. Doesn't unmount anything — if you'd been using Keep mounted or No cleanup on error, run `umount` manually first.
+
+**7. Progress bar + status + log viewer** — the bottom half is a scrolling log with timestamps. Errors render red, warnings amber, debug messages grey. `Clear` empties the log; `Save log...` writes it to a file (handy for sharing diagnostics).
 
 ## What `build-image.sh` does
 
