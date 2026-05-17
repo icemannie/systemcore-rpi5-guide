@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import zipfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -770,6 +771,13 @@ def patch_image(opts: PatchOptions, log: logging.Logger,
     """
     preflight(opts, log)
 
+    # If the user picked a .zip output target, force it to .img — we can't
+    # patch partitions inside a zip and won't repack at the end.
+    if opts.output_image.suffix.lower() == ".zip":
+        new_out = opts.output_image.with_suffix(".img")
+        log.warning("Output is a .zip; switching to %s (cannot repack a zip)", new_out)
+        opts.output_image = new_out
+
     # Stage 1: copy input -> working file, then -> output at the end. If a
     # patch fails partway through, the user's input image is never touched.
     working = opts.output_image.with_suffix(opts.output_image.suffix + ".partial")
@@ -780,11 +788,30 @@ def patch_image(opts: PatchOptions, log: logging.Logger,
         if not opts.dry_run:
             shutil.copy2(opts.input_image, bak)
 
-    log.info("Copying %s -> %s", opts.input_image, working)
-    if not opts.dry_run:
-        if working.exists():
-            working.unlink()
-        shutil.copy2(opts.input_image, working)
+    input_is_zip = opts.input_image.suffix.lower() == ".zip"
+    if input_is_zip:
+        log.info("Extracting %s -> %s", opts.input_image, working)
+        if not opts.dry_run:
+            if working.exists():
+                working.unlink()
+            with zipfile.ZipFile(opts.input_image) as zf:
+                imgs = [n for n in zf.namelist() if n.lower().endswith(".img")]
+                if not imgs:
+                    raise RuntimeError(
+                        f"No .img file inside {opts.input_image}: {zf.namelist()}"
+                    )
+                if len(imgs) > 1:
+                    log.warning("Multiple .img members found, using first: %s", imgs)
+                member = imgs[0]
+                log.info("Extracting member %s", member)
+                with zf.open(member) as src, open(working, "wb") as dst:
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+    else:
+        log.info("Copying %s -> %s", opts.input_image, working)
+        if not opts.dry_run:
+            if working.exists():
+                working.unlink()
+            shutil.copy2(opts.input_image, working)
 
     layout = detect_layout(working if not opts.dry_run else opts.input_image, log)
 
