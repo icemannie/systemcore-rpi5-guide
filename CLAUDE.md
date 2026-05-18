@@ -7,17 +7,16 @@ Tooling for running FRC Limelight SystemCore OS on a standard Raspberry Pi 5 Mod
 ## Primary workflow
 
 ```bash
-sudo ./build-image.sh        # downloads, builds kernel (cached), patches image
+sudo ./build-image.sh        # downloads upstream image, patches it
 sudo dd if=systemcore-pi5b-beta10-v1.img of=/dev/sdX bs=4M status=progress
 ```
 
 ## Project layout
 
 ```
-build-image.sh        - Main script: downloads upstream image, builds kernel, patches everything
-build-kernel.sh       - Cross-compiles 4K-page ARM64 kernel from rpi-6.12.y
-check-image.sh        - Validates a built image (partition layout, kernel, patches)
-patch-image.py        - Standalone patcher for new upstream releases (no kernel rebuild)
+build-image.sh        - Main script: downloads upstream image, patches everything
+check-image.sh        - Validates a built image (partition layout, patches)
+patch-image.py        - Standalone patcher for new upstream releases
 patcher/              - Python package backing patch-image.py
   core.py             - Partition discovery, mount tracking, per-patch logic, orchestrator
   gui.py              - Tkinter GUI with live log streaming + per-patch toggles
@@ -37,9 +36,8 @@ beta9/
 
 | Scenario | Tool |
 | --- | --- |
-| First-time setup (need to build the 4K kernel) | `sudo ./build-image.sh` |
-| New upstream release, kernel unchanged | `sudo python3 patch-image.py upstream.img` |
-| New upstream release, kernel bumped | `sudo ./build-image.sh` (rebuilds kernel, then patches) |
+| Build a patched image from scratch | `sudo ./build-image.sh` |
+| New upstream release | `sudo python3 patch-image.py upstream.img` |
 | Apply only one patch to an existing image for debugging | `sudo python3 patch-image.py img --only install_mrccan` |
 | Inspect what's in a patched image | `sudo python3 patch-image.py img --inspect` (mounts all 4 partitions, prints paths) |
 | Verify a patched image looks right | `sudo python3 patch-image.py img --validate` |
@@ -47,23 +45,22 @@ beta9/
 
 `patcher/resources/*` is the single source of truth for systemd overrides, udev rules, and tmpfile configs. `build-image.sh` currently inlines copies of these via heredocs — keep them in sync if you change one.
 
-Not tracked in git: `rpi-linux/`, `cache/`, `*.img`, `*.zip`, `netboot/tftpboot/`, `netboot/nfsroot/`
+Not tracked in git: `cache/`, `*.img`, `*.zip`, `netboot/tftpboot/`, `netboot/nfsroot/`
 
 ## What the build script patches
 
-1. **4K-page kernel** — Stock kernel uses 16K pages, Buildroot binaries need 4K alignment. Cross-compiled from rpi-6.12.y with matching modules.
-2. **HDMI enabled** — stock image disables all display output (headless for Limelight carrier board)
-3. **SPI CAN overlays disabled** — no MCP2518 hardware on Pi 5B
-4. **flash-pico.sh** — replaces picoflasherprocess for external USB Pico flashing via dd
-5. **Multi-adapter USB-CAN** — any number of USB-CAN adapters, CAN FD with fallback to standard CAN
-6. **Persistent CAN naming** — USB port path mapped to stable can_sN index via `/etc/can_port_map`, works with USB hubs
-7. **CAN is optional** — 30s timeout, robot starts regardless of adapter presence
-8. **CAN discovery frame** — `cansend 000#00` sent on each bus after interface up
-9. **vcan placeholders** — canbusprocess fills missing `can_s0..can_s4` slots with vcan interfaces after USB-CAN setup. HAL aborts the robot program if any of the 5 buses is missing (`SIOCGIFINDEX ... No such device`), so this is required for robot.service to start with fewer than 5 physical adapters.
-10. **/dev/mrccan tmpfile** — `/etc/tmpfiles.d/mrccan.conf` creates `/dev/mrccan/` at boot. Without it `MrcCommDaemon` crash-loops on `Failed to open control data file`, never sets the NT key `/Netcomm/Control/ServerReady`, and the HAL SIGABRTs the robot program ~10s after start with `Error: Waiting for server ready failed`.
-11. **Wireless regdb** — regulatory.db installed for US WiFi channel support
-12. **WLAN0 AP settings unlocked** — dashboard JS patched to allow modifying Access Point config
-13. **Fault count reset button** — frontend-only baseline reset added to fault tooltip in dashboard
+1. **HDMI enabled** — stock image disables all display output (headless for Limelight carrier board)
+2. **SPI CAN overlays disabled** — no MCP2518 hardware on Pi 5B
+3. **flash-pico.sh** — replaces picoflasherprocess for external USB Pico flashing via dd
+4. **Multi-adapter USB-CAN** — any number of USB-CAN adapters, CAN FD with fallback to standard CAN
+5. **Persistent CAN naming** — USB port path mapped to stable can_sN index via `/etc/can_port_map`, works with USB hubs
+6. **CAN is optional** — 30s timeout, robot starts regardless of adapter presence
+7. **CAN discovery frame** — `cansend 000#00` sent on each bus after interface up
+8. **vcan placeholders** — canbusprocess fills missing `can_s0..can_s4` slots with vcan interfaces after USB-CAN setup. HAL aborts the robot program if any of the 5 buses is missing (`SIOCGIFINDEX ... No such device`), so this is required for robot.service to start with fewer than 5 physical adapters.
+9. **/dev/mrccan tmpfile** — `/etc/tmpfiles.d/mrccan.conf` creates `/dev/mrccan/` at boot. Without it `MrcCommDaemon` crash-loops on `Failed to open control data file`, never sets the NT key `/Netcomm/Control/ServerReady`, and the HAL SIGABRTs the robot program ~10s after start with `Error: Waiting for server ready failed`.
+10. **Wireless regdb** — regulatory.db installed for US WiFi channel support
+11. **WLAN0 AP settings unlocked** — dashboard JS patched to allow modifying Access Point config
+12. **Fault count reset button** — frontend-only baseline reset added to fault tooltip in dashboard
 
 ## Key technical details
 
@@ -75,7 +72,7 @@ Not tracked in git: `rpi-linux/`, `cache/`, `*.img`, `*.zip`, `netboot/tftpboot/
   - p4: extended
   - p5: rootfs A (ext4, 7G)
   - p6: rootfs B (ext4, 7G)
-- Kernel version: 6.12.87-v8-16k+ (4K pages despite the name)
+- Upstream kernel: 16K pages (stock kernel works on Pi 5B as of Beta 10)
 - Pi 5B external USB: xhci-hcd.0 (bus 1, ports 1-1 through 1-2)
 - Pico after flash: VID=0xCAFE PID=0x4011 ("Limelight RT Subsystem")
 - CAN udev match: `ATTR{type}=="280"` (ARPHRD_CAN, matches any CAN netdev). The build's `90-usb-can-rename.rules` adds `SUBSYSTEMS=="usb"` so vcan interfaces (no parent device) don't match — without that constraint, adding a vcan from inside canbusprocess re-triggers canbusprocess and infinite-loops.
@@ -103,9 +100,7 @@ sudo journalctl -u robot.service -n 50 --no-pager
 ## Dev environment
 
 - Host: WSL2 on Windows (Ubuntu/Debian)
-- Cross-compiler: aarch64-linux-gnu-gcc
 - Target: Raspberry Pi 5 Model B (BCM2712), ARM64
-- Kernel branch: rpi-6.12.y
 - SystemCore version: Beta 10 (limelightosr-beta-10-139)
 - Test Pi: systemcore@10.0.0.167 (password: systemcore)
 

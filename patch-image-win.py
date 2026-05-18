@@ -36,7 +36,6 @@ def cli():
     parser.add_argument("--backup", action="store_true", help="Backup input before patching")
     parser.add_argument("--skip-b", action="store_true", help="Only patch A partitions")
     parser.add_argument("--validate", action="store_true", help="Validate after patching")
-    parser.add_argument("--kernel-dir", type=Path, help="Path to built rpi-linux tree")
     parser.add_argument("--only", nargs="+", help="Run only these patches",
                         choices=list(PATCH_DESCRIPTIONS.keys()))
     parser.add_argument("--list-patches", action="store_true",
@@ -79,9 +78,6 @@ def cli():
         skip_b_partitions=args.skip_b,
         validate_after=args.validate,
     )
-
-    if args.kernel_dir:
-        opts.kernel_dir = args.kernel_dir
 
     if args.only:
         for name in opts.patch_names():

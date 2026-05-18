@@ -40,7 +40,6 @@ RES_PICOFLASHER = RESOURCES / "picoflasher-override.conf"
 RES_MRCCAN = RESOURCES / "mrccan.conf"
 
 DEFAULT_FLASH_PICO = PROJECT_ROOT / "netboot" / "flash-pico.sh"
-DEFAULT_KERNEL_DIR = PROJECT_ROOT / "rpi-linux"
 DEFAULT_REGDB_DEB = (
     PROJECT_ROOT / "beta9" / "wireless-regdb_2025.10.07-0ubuntu1~24.04.1_all.deb"
 )
@@ -69,19 +68,14 @@ class PatchOptions:
     input_image: Path = Path("")
     output_image: Path = Path("")
     flash_pico_path: Path = DEFAULT_FLASH_PICO
-    kernel_dir: Path = DEFAULT_KERNEL_DIR
     regdb_deb_path: Path = DEFAULT_REGDB_DEB
 
     # Boot patches
-    install_kernel: bool = True
-    install_dtbs: bool = True
-    install_overlays: bool = True
     enable_hdmi: bool = True
     disable_spi_can: bool = True
     update_cmdline: bool = True
 
     # Rootfs patches
-    install_modules: bool = True
     install_flash_pico: bool = True
     install_can_udev: bool = True
     install_canbusprocess: bool = True
@@ -101,9 +95,8 @@ class PatchOptions:
 
     def patch_names(self) -> list[str]:
         return [
-            "install_kernel", "install_dtbs", "install_overlays",
             "enable_hdmi", "disable_spi_can", "update_cmdline",
-            "install_modules", "install_flash_pico", "install_can_udev",
+            "install_flash_pico", "install_can_udev",
             "install_canbusprocess", "install_canbuswatchdog",
             "install_robot_override", "install_mrccan", "install_regdb",
             "patch_dashboard_wlan", "patch_dashboard_faults",
@@ -111,13 +104,9 @@ class PatchOptions:
 
 
 PATCH_DESCRIPTIONS: dict[str, str] = {
-    "install_kernel": "Replace stock 16K-page kernel with our 4K-page build",
-    "install_dtbs": "Install matching bcm2712*.dtb device trees",
-    "install_overlays": "Install matching overlay .dtbo files",
     "enable_hdmi": "Uncomment HDMI display options in config.txt",
     "disable_spi_can": "Comment out spi/sc-mcp2518 overlays (no SPI CAN on Pi 5B)",
     "update_cmdline": "Add panic=0 and cfg80211.ieee80211_regdom=US to cmdline.txt",
-    "install_modules": "Copy kernel modules matching the installed kernel version",
     "install_flash_pico": "Install flash-pico.sh + picoflasherprocess override",
     "install_can_udev": "Install 90-usb-can-rename.rules (USB-only trigger)",
     "install_canbusprocess": "Install canbusprocess override with vcan placeholders",
@@ -141,13 +130,6 @@ def _sed(text: str, pattern: str, replacement: str, log: logging.Logger) -> tupl
     if count > 0:
         log.info("  sed: %d substitution(s) for %r", count, pattern[:60])
     return patched, count
-
-
-def _read_kernel_release(kernel_dir: Path) -> Optional[str]:
-    rel_file = kernel_dir / "include" / "config" / "kernel.release"
-    if not rel_file.exists():
-        return None
-    return rel_file.read_text().strip()
 
 
 # ---------------------------------------------------------------------------
@@ -178,36 +160,6 @@ def patch_boot_partition(fat: FatPartition, opts: PatchOptions,
         config, _ = _sed(config, r"^(dtoverlay=spi[0-9].*)$", r"#\1", log)
         config, _ = _sed(config, r"^(dtoverlay=sc-mcp2518.*)$", r"#\1", log)
         fat.write_text("/config.txt", config)
-
-    if opts.install_kernel:
-        kernel = opts.kernel_dir / "arch" / "arm64" / "boot" / "Image"
-        if not kernel.exists():
-            raise PatcherError(
-                f"Kernel not found at {kernel} — run build-kernel.sh first."
-            )
-        log.info("[%s] Installing kernel Image", label)
-        if not opts.dry_run:
-            fat.copy_file_in(kernel, "/Image")
-
-    if opts.install_dtbs:
-        dtb_src = opts.kernel_dir / "arch" / "arm64" / "boot" / "dts" / "broadcom"
-        if dtb_src.exists():
-            for dtb in dtb_src.glob("bcm2712*.dtb"):
-                log.info("[%s] Installing %s", label, dtb.name)
-                if not opts.dry_run:
-                    fat.copy_file_in(dtb, f"/{dtb.name}")
-        else:
-            log.warning("[%s] DTB source directory missing: %s", label, dtb_src)
-
-    if opts.install_overlays:
-        ovr_src = opts.kernel_dir / "arch" / "arm64" / "boot" / "dts" / "overlays"
-        if ovr_src.exists():
-            for f in ovr_src.iterdir():
-                if f.suffix.startswith(".dtb"):
-                    if not opts.dry_run:
-                        fat.copy_file_in(f, f"/overlays/{f.name}")
-        else:
-            log.warning("[%s] Overlay source directory missing: %s", label, ovr_src)
 
     if opts.update_cmdline:
         try:
@@ -250,19 +202,6 @@ def patch_rootfs_partition(ext4: Ext4Partition, opts: PatchOptions,
                     RES_PICOFLASHER,
                     "/etc/systemd/system/limelight_picoflasherprocess.service.d/override.conf",
                 )
-
-    if opts.install_modules:
-        kver = _read_kernel_release(opts.kernel_dir)
-        if kver:
-            modules_staging = PROJECT_ROOT / "cache" / "modules" / "lib" / "modules" / kver
-            if modules_staging.exists():
-                log.info("[%s] Installing kernel modules (%s)", label, kver)
-                if not opts.dry_run:
-                    ext4.copy_tree_in(modules_staging, f"/usr/lib/modules/{kver}")
-            else:
-                log.warning("[%s] Modules staging dir missing: %s", label, modules_staging)
-        else:
-            log.warning("[%s] Could not read kernel release; skipping modules", label)
 
     if opts.install_can_udev:
         log.info("[%s] Installing CAN udev rules", label)
@@ -445,13 +384,6 @@ def preflight(opts: PatchOptions, log: logging.Logger) -> None:
         )
     if not opts.output_image.parent.exists():
         raise PreflightError(f"Output directory does not exist: {opts.output_image.parent}")
-
-    if opts.install_kernel or opts.install_dtbs or opts.install_overlays or opts.install_modules:
-        if not opts.kernel_dir.exists():
-            raise PreflightError(
-                f"Kernel dir does not exist: {opts.kernel_dir} "
-                "(disable kernel/dtb/overlay/modules patches or pass a valid path)"
-            )
 
     log.info("Preflight checks passed")
 

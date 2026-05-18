@@ -43,7 +43,6 @@ RES_MRCCAN = RESOURCES / "mrccan.conf"
 
 # Project-relative defaults the user can override.
 DEFAULT_FLASH_PICO = PROJECT_ROOT / "netboot" / "flash-pico.sh"
-DEFAULT_KERNEL_DIR = PROJECT_ROOT / "rpi-linux"
 DEFAULT_REGDB_DEB = (
     PROJECT_ROOT / "beta9" / "wireless-regdb_2025.10.07-0ubuntu1~24.04.1_all.deb"
 )
@@ -80,19 +79,14 @@ class PatchOptions:
     input_image: Path = Path("")
     output_image: Path = Path("")
     flash_pico_path: Path = DEFAULT_FLASH_PICO
-    kernel_dir: Path = DEFAULT_KERNEL_DIR
     regdb_deb_path: Path = DEFAULT_REGDB_DEB
 
     # --- Boot partition patches ---
-    install_kernel: bool = True
-    install_dtbs: bool = True
-    install_overlays: bool = True
     enable_hdmi: bool = True
     disable_spi_can: bool = True
     update_cmdline: bool = True
 
     # --- Rootfs patches ---
-    install_modules: bool = True
     install_flash_pico: bool = True
     install_can_udev: bool = True
     install_canbusprocess: bool = True
@@ -115,13 +109,9 @@ class PatchOptions:
     def patch_names(self) -> list[str]:
         """Names of every patch toggle, used for --list-patches and the GUI."""
         return [
-            "install_kernel",
-            "install_dtbs",
-            "install_overlays",
             "enable_hdmi",
             "disable_spi_can",
             "update_cmdline",
-            "install_modules",
             "install_flash_pico",
             "install_can_udev",
             "install_canbusprocess",
@@ -135,13 +125,9 @@ class PatchOptions:
 
 
 PATCH_DESCRIPTIONS: dict[str, str] = {
-    "install_kernel": "Replace stock 16K-page kernel with our 4K-page build",
-    "install_dtbs": "Install matching bcm2712*.dtb device trees",
-    "install_overlays": "Install matching overlay .dtbo files",
     "enable_hdmi": "Uncomment HDMI display options in config.txt",
     "disable_spi_can": "Comment out spi/sc-mcp2518 overlays (no SPI CAN on Pi 5B)",
     "update_cmdline": "Add panic=0 and cfg80211.ieee80211_regdom=US to cmdline.txt",
-    "install_modules": "Copy kernel modules matching the installed kernel version",
     "install_flash_pico": "Install flash-pico.sh + picoflasherprocess override",
     "install_can_udev": "Install 90-usb-can-rename.rules (USB-only trigger)",
     "install_canbusprocess": "Install canbusprocess override with vcan placeholders",
@@ -462,35 +448,6 @@ def patch_boot_partition(mount: Path, opts: PatchOptions, log: logging.Logger,
         sed_inplace(config, r"^(dtoverlay=spi[0-9].*)$", r"#\1", log, opts.dry_run)
         sed_inplace(config, r"^(dtoverlay=sc-mcp2518.*)$", r"#\1", log, opts.dry_run)
 
-    if opts.install_kernel:
-        kernel = opts.kernel_dir / "arch" / "arm64" / "boot" / "Image"
-        if not kernel.exists():
-            raise PatcherError(
-                f"Kernel not found at {kernel} — run build-kernel.sh first "
-                "or pass --kernel-dir pointing to a built rpi-linux tree."
-            )
-        if not _is_4k_kernel(kernel, log):
-            log.warning("Kernel at %s may not be 4K-page — patching anyway", kernel)
-        copy_into(kernel, mount / "Image", log, opts.dry_run)
-
-    if opts.install_dtbs:
-        dtb_src = opts.kernel_dir / "arch" / "arm64" / "boot" / "dts" / "broadcom"
-        if dtb_src.exists():
-            for dtb in dtb_src.glob("bcm2712*.dtb"):
-                copy_into(dtb, mount / dtb.name, log, opts.dry_run)
-        else:
-            log.warning("[%s] DTB source directory missing: %s", label, dtb_src)
-
-    if opts.install_overlays:
-        ovr_src = opts.kernel_dir / "arch" / "arm64" / "boot" / "dts" / "overlays"
-        ovr_dst = mount / "overlays"
-        if ovr_src.exists():
-            for f in ovr_src.iterdir():
-                if f.suffix.startswith(".dtb"):
-                    copy_into(f, ovr_dst / f.name, log, opts.dry_run)
-        else:
-            log.warning("[%s] Overlay source directory missing: %s", label, ovr_src)
-
     if opts.update_cmdline and cmdline.exists():
         content = cmdline.read_text(encoding="utf-8").rstrip("\n")
         changed = False
@@ -504,15 +461,6 @@ def patch_boot_partition(mount: Path, opts: PatchOptions, log: logging.Logger,
             log.info("[%s] Updating cmdline.txt", label)
             if not opts.dry_run:
                 cmdline.write_text(content + "\n")
-
-
-def _is_4k_kernel(kernel: Path, log: logging.Logger) -> bool:
-    """Best-effort check that the kernel ELF was built with 4K pages."""
-    try:
-        out = run_text(["file", str(kernel)], log)
-        return "4K pages" in out
-    except Exception:  # noqa: BLE001 - file not strictly required
-        return True  # don't block on this
 
 
 # ---------------------------------------------------------------------------
@@ -536,24 +484,6 @@ def patch_rootfs_partition(mount: Path, opts: PatchOptions, log: logging.Logger,
                 mount / "etc/systemd/system/limelight_picoflasherprocess.service.d/override.conf"
             )
             copy_into(RES_PICOFLASHER, dst_override, log, opts.dry_run)
-
-    if opts.install_modules:
-        kver = _read_kernel_release(opts.kernel_dir)
-        if kver:
-            modules_staging = PROJECT_ROOT / "cache" / "modules" / "lib" / "modules" / kver
-            if modules_staging.exists():
-                target = mount / "usr/lib/modules" / kver
-                log.info("[%s] Installing kernel modules (%s)", label, kver)
-                if not opts.dry_run:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    if target.exists():
-                        shutil.rmtree(target)
-                    shutil.copytree(modules_staging, target, symlinks=True)
-            else:
-                log.warning("[%s] Modules staging dir missing: %s — run build-image.sh once "
-                            "to populate cache/modules/", label, modules_staging)
-        else:
-            log.warning("[%s] Could not read kernel release; skipping modules install", label)
 
     if opts.install_can_udev:
         copy_into(RES_UDEV_CAN, mount / "etc/udev/rules.d/90-usb-can-rename.rules",
@@ -592,14 +522,6 @@ def patch_rootfs_partition(mount: Path, opts: PatchOptions, log: logging.Logger,
 
     if opts.patch_dashboard_wlan or opts.patch_dashboard_faults:
         _patch_dashboard(mount, opts, log, label)
-
-
-def _read_kernel_release(kernel_dir: Path) -> Optional[str]:
-    """Return the kernel release string from a built kernel tree, or None."""
-    rel_file = kernel_dir / "include" / "config" / "kernel.release"
-    if not rel_file.exists():
-        return None
-    return rel_file.read_text().strip()
 
 
 def _install_regdb(mount: Path, deb: Path, log: logging.Logger,
@@ -751,13 +673,6 @@ def preflight(opts: PatchOptions, log: logging.Logger) -> None:
 
     if not opts.output_image.parent.exists():
         raise PreflightError(f"Output directory does not exist: {opts.output_image.parent}")
-
-    if opts.install_kernel or opts.install_dtbs or opts.install_overlays or opts.install_modules:
-        if not opts.kernel_dir.exists():
-            raise PreflightError(
-                f"--kernel-dir does not exist: {opts.kernel_dir} "
-                "(disable kernel/dtb/overlay/modules patches or pass a valid path)"
-            )
 
     log.info("Preflight checks passed")
 

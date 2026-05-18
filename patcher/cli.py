@@ -44,8 +44,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", help="Output image file (default: alongside input).")
 
     # Source paths
-    p.add_argument("--kernel-dir", default=str(core.DEFAULT_KERNEL_DIR),
-                   help="Path to built rpi-linux tree (default: %(default)s).")
     p.add_argument("--flash-pico", default=str(core.DEFAULT_FLASH_PICO),
                    help="Path to flash-pico.sh (default: %(default)s).")
     p.add_argument("--regdb", default=str(core.DEFAULT_REGDB_DEB),
@@ -123,7 +121,6 @@ def options_from_args(args: argparse.Namespace) -> core.PatchOptions:
         inp = Path(args.input)
         opts.output_image = inp.with_name(inp.stem + "-pi5b" + inp.suffix)
 
-    opts.kernel_dir = Path(args.kernel_dir)
     opts.flash_pico_path = Path(args.flash_pico)
     opts.regdb_deb_path = Path(args.regdb)
 

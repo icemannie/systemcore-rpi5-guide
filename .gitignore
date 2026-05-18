@@ -5,9 +5,6 @@
 *.tar.gz
 *.tar.xz
 
-# Kernel source tree (cloned by build-kernel.sh)
-rpi-linux/
-
 # Build output
 output/
 cache/

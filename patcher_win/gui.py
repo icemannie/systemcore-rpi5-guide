@@ -41,15 +41,11 @@ class QueueHandler(logging.Handler):
 
 class PatcherGUI:
     BOOT_PATCHES = [
-        ("install_kernel", "Install 4K kernel"),
-        ("install_dtbs", "Install device trees"),
-        ("install_overlays", "Install overlays"),
         ("enable_hdmi", "Enable HDMI"),
         ("disable_spi_can", "Disable SPI CAN overlays"),
         ("update_cmdline", "Add panic=0 + US wifi regdom"),
     ]
     ROOTFS_PATCHES = [
-        ("install_modules", "Install kernel modules"),
         ("install_flash_pico", "Install flash-pico.sh"),
         ("install_can_udev", "USB-CAN udev rule"),
         ("install_canbusprocess", "canbusprocess override (vcan placeholders)"),
@@ -112,17 +108,14 @@ class PatcherGUI:
         self._file_row(top, 1, "Output image:", self.output_var, self._pick_output)
 
         # Source paths
-        self.kernel_var = tk.StringVar(value=str(core.DEFAULT_KERNEL_DIR))
         self.flash_pico_var = tk.StringVar(value=str(core.DEFAULT_FLASH_PICO))
         self.regdb_var = tk.StringVar(value=str(core.DEFAULT_REGDB_DEB))
 
         paths = ttk.LabelFrame(self.root, text="Source paths", padding=8)
         paths.pack(fill="x", padx=10, pady=4)
-        self._file_row(paths, 0, "Kernel tree:", self.kernel_var,
-                       self._pick_kernel, is_dir=True)
-        self._file_row(paths, 1, "flash-pico.sh:", self.flash_pico_var,
+        self._file_row(paths, 0, "flash-pico.sh:", self.flash_pico_var,
                        self._pick_flash_pico)
-        self._file_row(paths, 2, "wireless-regdb .deb:", self.regdb_var,
+        self._file_row(paths, 1, "wireless-regdb .deb:", self.regdb_var,
                        self._pick_regdb)
 
         # Patch toggles
@@ -273,13 +266,6 @@ class PatcherGUI:
         if path:
             self.output_var.set(path)
 
-    def _pick_kernel(self) -> None:
-        path = filedialog.askdirectory(
-            title="Path to built rpi-linux/ tree",
-            initialdir=self._initial_dir())
-        if path:
-            self.kernel_var.set(path)
-
     def _pick_flash_pico(self) -> None:
         path = filedialog.askopenfilename(
             title="flash-pico.sh",
@@ -308,7 +294,6 @@ class PatcherGUI:
         opts = core.PatchOptions(
             input_image=Path(self.input_var.get()),
             output_image=Path(self.output_var.get()),
-            kernel_dir=Path(self.kernel_var.get()),
             flash_pico_path=Path(self.flash_pico_var.get()),
             regdb_deb_path=Path(self.regdb_var.get()),
             dry_run=self.dry_run_var.get(),

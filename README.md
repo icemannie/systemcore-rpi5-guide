@@ -20,7 +20,7 @@ Insert the SD card into your Pi 5 and power on. No further configuration needed.
 
 ## Patching new upstream releases (`patch-image.py`)
 
-When WPI/Limelight ships a new SystemCore image and you already have a built 4K kernel cached, you don't need to re-run the full build. Use the patcher instead:
+When WPI/Limelight ships a new SystemCore image, you can patch it directly without re-running the full build:
 
 ```bash
 # GUI:
@@ -30,9 +30,7 @@ sudo python3 patch-image.py
 sudo python3 patch-image.py upstream.img -o patched.img
 ```
 
-The patcher detects partition offsets dynamically (via `sfdisk`), so it survives layout changes between releases. It applies the same set of patches `build-image.sh` does, but skips the kernel build and image download — typically takes 1–2 minutes instead of 30+.
-
-When upstream bumps the kernel version, fall back to `build-image.sh` (or pass `--kernel-dir` to a tree you've built yourself).
+The patcher detects partition offsets dynamically (via `sfdisk`), so it survives layout changes between releases. It applies the same set of patches `build-image.sh` does, but skips the image download.
 
 ### CLI options
 
@@ -51,7 +49,7 @@ sudo python3 patch-image.py [input.img] [options]
   --show-partitions         Print partition layout and exit
   --list-patches            List every patch with a description
   --only PATCH,PATCH        Apply only these patches (everything else off)
-  --no-<patch>              Skip a single patch (e.g. --no-install-modules)
+  --no-<patch>              Skip a single patch (e.g. --no-install-mrccan)
 ```
 
 Run `sudo python3 patch-image.py --list-patches` for the full set of patch names.
@@ -69,20 +67,17 @@ The window is laid out top-to-bottom in seven sections:
 **1. Image files** — pickers for the input image and the output image. Selecting an input auto-fills the output as `<input>-pi5b.img` next to it (override with the second Browse button).
 
 **2. Source paths** — auto-filled from the repo:
-- `Kernel tree`: path to the built `rpi-linux/` tree (only needed if any kernel/DTB/overlay/module patch is enabled — uncheck all four to patch without a built kernel)
 - `flash-pico.sh`: path to the Pico flasher script that gets installed into `/usr/local/bin/`
 - `wireless-regdb .deb`: path to the regdb Debian package extracted into `/usr/lib/firmware/`
 
 Each path has a Browse button if the default isn't right.
 
 **3. Boot partition patches (A + B)** — checkboxes for the boot-side patches:
-- `Install 4K kernel` / `Install device trees` / `Install overlays` — replace the stock 16K-page kernel with the 4K-page build and matching `bcm2712*.dtb` + overlay files
 - `Enable HDMI` — uncomment the display options in `config.txt`
 - `Disable SPI CAN overlays` — comment out `dtoverlay=spi*` / `dtoverlay=sc-mcp2518` lines (no SPI CAN hardware on Pi 5B)
 - `Add panic=0 + US wifi regdom` — append kernel cmdline params
 
 **4. Rootfs patches (A + B)** — checkboxes for the rootfs-side patches:
-- `Install kernel modules` — copy matching modules into `/usr/lib/modules/$KVER`
 - `Install flash-pico.sh` — install the script + service override that lets external Picos be flashed
 - `USB-CAN udev rule` — install `90-usb-can-rename.rules` (scoped to USB so vcan placeholders don't trigger restart loops)
 - `canbusprocess override (vcan placeholders)` — install the override that names USB-CAN adapters and fills any missing `can_s0..can_s4` slot with a vcan interface (HAL requires all 5)
@@ -119,15 +114,10 @@ Hover any checkbox for a tooltip explaining what that patch does.
 The script automates everything needed to convert the upstream CM5 image into a Pi 5B-compatible image:
 
 1. **Downloads** the upstream SystemCore Beta 10 image from GitHub (cached after first download)
-2. **Builds a 4K-page kernel** from the rpi-6.12.y branch (15-30 min, cached after first build)
-3. **Patches both boot partitions** (A/B) — enables HDMI, disables SPI CAN, installs kernel + device trees
-4. **Patches both rootfs partitions** (A/B) — installs kernel modules, Pico flasher, CAN adapter support, dashboard patches
+2. **Patches both boot partitions** (A/B) — enables HDMI, disables SPI CAN overlays, updates cmdline
+3. **Patches both rootfs partitions** (A/B) — installs Pico flasher, CAN adapter support, dashboard patches
 
 ## What gets patched
-
-### 4K-page kernel
-
-The stock kernel uses 16K pages, but Buildroot binaries need 4K ELF alignment. The build script cross-compiles a 4K-page kernel from the rpi-6.12.y branch and installs matching modules (including `gs_usb` for USB-CAN).
 
 ### HDMI output
 
@@ -192,7 +182,6 @@ The stock image is missing `regulatory.db`. The build script installs the US reg
 
 ```
 build-image.sh          - End-to-end image builder (run with sudo)
-build-kernel.sh         - Cross-compiles 4K-page kernel for Pi 5
 check-image.sh          - Validates a built image
 patch-image.py          - Standalone patcher for new upstream releases (GUI + CLI)
 patcher/                - Python package for patch-image.py
@@ -216,8 +205,7 @@ netboot/                - Network boot setup (development/debugging)
 
 Files not tracked in git (generated/downloaded):
 ```
-cache/                            - Downloaded upstream image zip + staged modules
-rpi-linux/                        - Kernel source tree (~2.8GB, cloned by build-kernel.sh)
+cache/                            - Downloaded upstream image zip
 systemcore-pi5b-beta10-v1.img     - Output image (~14GB)
 netboot/tftpboot/                 - TFTP boot files (kernel, DTBs, overlays)
 netboot/nfsroot/                  - NFS root mount point
@@ -236,15 +224,14 @@ This installs `tftpd-hpa` and `nfs-kernel-server`, configures exports, and print
 ## Prerequisites
 
 - Linux host for building (Ubuntu/Debian, WSL2 works)
-- `aarch64-linux-gnu-gcc` cross-compiler (installed automatically by `build-kernel.sh`)
-- ~20GB free disk space (kernel source + images)
+- ~15GB free disk space (upstream image + patched output)
 - `sudo` access (for loop-mounting image partitions)
 
 ## Tested on
 
 - Raspberry Pi 5 Model B (4GB/8GB)
 - SystemCore Beta 10 (`limelightosr-beta-10-139`)
-- Kernel: Linux 6.12.87-v8-16k+ (rpi-6.12.y branch, 4K pages, ARM64)
+- Kernel: stock upstream 16K-page kernel (works on Pi 5B as-is since Beta 10)
 - Host: WSL2 on Windows 11
 
 ## License

@@ -4,7 +4,6 @@ set -euo pipefail
 PI5B_VERSION="v1"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-KERNEL_DIR="${SCRIPT_DIR}/rpi-linux"
 FLASH_PICO="${SCRIPT_DIR}/netboot/flash-pico.sh"
 REGDB_DEB="${SCRIPT_DIR}/beta9/wireless-regdb_2025.10.07-0ubuntu1~24.04.1_all.deb"
 
@@ -48,6 +47,8 @@ echo "=== SystemCore Pi 5B Image Builder (Beta 10) ==="
 echo ""
 
 # --- Step 2: Download upstream image ---
+# NOTE: Upstream Beta 10+ ships a 16K-page kernel with matching userspace.
+# We no longer replace the kernel — the stock one works on Pi 5B as-is.
 
 mkdir -p "${SCRIPT_DIR}/cache"
 
@@ -72,31 +73,7 @@ echo "  Found: $INNER_IMG"
 unzip -p "$IMAGE_ZIP" "$INNER_IMG" > "$BUILD_IMG"
 echo "  Extracted to: $BUILD_IMG ($(du -h "$BUILD_IMG" | cut -f1))"
 
-# --- Step 3: Build/validate 4K-page kernel ---
-
-KERNEL_IMAGE="${KERNEL_DIR}/arch/arm64/boot/Image"
-
-if [ ! -f "$KERNEL_IMAGE" ] || ! file "$KERNEL_IMAGE" | grep -q "4K pages"; then
-    echo "[3/6] Building 4K-page kernel (15-30 minutes)..."
-    "${SCRIPT_DIR}/build-kernel.sh"
-else
-    echo "[3/6] 4K-page kernel already built."
-fi
-echo "  Kernel: $(file "$KERNEL_IMAGE" | sed 's/.*: //')"
-
-MODULES_STAGING="${SCRIPT_DIR}/cache/modules"
-KVER=$(cat "${KERNEL_DIR}/include/config/kernel.release")
-if [ ! -d "${MODULES_STAGING}/lib/modules/${KVER}/kernel" ]; then
-    echo "  Installing kernel modules to staging..."
-    rm -rf "${MODULES_STAGING}"
-    make -C "$KERNEL_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-        INSTALL_MOD_PATH="$MODULES_STAGING" modules_install
-fi
-rm -f "${MODULES_STAGING}/lib/modules/${KVER}/build"
-rm -f "${MODULES_STAGING}/lib/modules/${KVER}/source"
-echo "  Modules staged: ${KVER} ($(du -sh "${MODULES_STAGING}/lib/modules/${KVER}" | cut -f1))"
-
-# --- Step 4: Patch boot partitions (A and B) ---
+# --- Step 3: Patch boot partitions (A and B) ---
 
 patch_boot() {
     local MNT="$1"
@@ -113,13 +90,6 @@ patch_boot() {
     sed -i '/^dtoverlay=spi[0-9]/s/^/#/' "$MNT/config.txt"
     sed -i '/^dtoverlay=sc-mcp2518/s/^/#/' "$MNT/config.txt"
 
-    # Replace 16K-page kernel with our 4K-page build
-    cp "$KERNEL_IMAGE" "$MNT/Image"
-
-    # Install matching device trees and overlays
-    cp "$KERNEL_DIR"/arch/arm64/boot/dts/broadcom/bcm2712*.dtb "$MNT/"
-    cp "$KERNEL_DIR"/arch/arm64/boot/dts/overlays/*.dtb* "$MNT/overlays/" 2>/dev/null || true
-
     # Add panic=0 and wifi regdom to cmdline if not already present
     if ! grep -q "panic=" "$MNT/cmdline.txt"; then
         sed -i 's/$/ panic=0/' "$MNT/cmdline.txt"
@@ -128,10 +98,10 @@ patch_boot() {
         sed -i 's/$/ cfg80211.ieee80211_regdom=US/' "$MNT/cmdline.txt"
     fi
 
-    echo "  [$LABEL] Kernel, DTBs, HDMI enabled, SPI CAN disabled"
+    echo "  [$LABEL] HDMI enabled, SPI CAN disabled, cmdline updated"
 }
 
-echo "[4/6] Patching boot partitions..."
+echo "[3/5] Patching boot partitions..."
 
 BOOT_A_MNT=$(mktemp -d)
 mount -o loop,offset=${BOOT_A_OFF} "$BUILD_IMG" "$BOOT_A_MNT"
@@ -145,13 +115,13 @@ patch_boot "$BOOT_B_MNT" "boot_b"
 umount "$BOOT_B_MNT"
 rmdir "$BOOT_B_MNT"
 
-# --- Step 5: Patch rootfs A and B ---
+# --- Step 4: Patch rootfs A and B ---
 
 patch_rootfs() {
     local MNT="$1"
     local LABEL="$2"
 
-    # a) Pico flasher
+    # Pico flasher
     cp "$FLASH_PICO" "$MNT/usr/local/bin/flash-pico.sh"
     chmod +x "$MNT/usr/local/bin/flash-pico.sh"
 
@@ -163,14 +133,7 @@ ExecStart=/usr/local/bin/flash-pico.sh
 EOF
     echo "  [$LABEL] Installed flash-pico.sh + override"
 
-    # b) Kernel modules (matching our 4K-page kernel)
-    if [ -d "${MODULES_STAGING}/lib/modules/${KVER}" ]; then
-        mkdir -p "$MNT/usr/lib/modules"
-        cp -a "${MODULES_STAGING}/lib/modules/${KVER}" "$MNT/usr/lib/modules/"
-        echo "  [$LABEL] Installed kernel modules (${KVER})"
-    fi
-
-    # c) CAN adapter support (multi-adapter, optional — graceful timeout)
+    # CAN adapter support (multi-adapter, optional — graceful timeout)
 
     # Udev rule: trigger CAN service restart when USB-CAN adapter is plugged in.
     # SUBSYSTEMS=="usb" prevents the rule from matching vcan placeholders we
@@ -274,7 +237,7 @@ ExecStartPre=/bin/bash -c 'echo "Waiting for CAN adapters (30s)..."; for i in $(
 EOF
     echo "  [$LABEL] Installed multi-adapter CAN FD support (optional, 30s timeout)"
 
-    # f) MrcCommDaemon directory.
+    # MrcCommDaemon directory.
     # On real SystemCore hardware, /dev/mrccan/ is created by a kernel module
     # specific to the carrier board. On Pi 5B that module doesn't exist, so
     # MrcCommDaemon crash-loops trying to create /dev/mrccan/controldata and
@@ -291,7 +254,7 @@ d /dev/mrccan 0755 root root -
 EOF
     echo "  [$LABEL] Created /dev/mrccan tmpfile (unblocks MrcCommDaemon)"
 
-    # d) Wireless regulatory database
+    # Wireless regulatory database
     if [ -f "$REGDB_DEB" ]; then
         REGDB_TMP=$(mktemp -d)
         dpkg-deb -x "$REGDB_DEB" "$REGDB_TMP"
@@ -301,7 +264,7 @@ EOF
         echo "  [$LABEL] Installed wireless-regdb (regulatory.db)"
     fi
 
-    # e) Unlock WLAN0 Access Point settings in dashboard
+    # Unlock WLAN0 Access Point settings in dashboard
     local DASHBOARD_JS=$(find "$MNT/var/www/html/static/js" -name 'main.*.js' 2>/dev/null | head -1)
     if [ -n "$DASHBOARD_JS" ]; then
         # Unlock wlan0 fields (disabled:o||a -> disabled:o where a="wlan0"===e)
@@ -317,25 +280,25 @@ EOF
     fi
 }
 
-echo "[5/6] Patching rootfs A..."
+echo "[4/5] Patching rootfs A..."
 ROOT_A_MNT=$(mktemp -d)
 mount -o loop,offset=${ROOT_A_OFF} "$BUILD_IMG" "$ROOT_A_MNT"
 patch_rootfs "$ROOT_A_MNT" "rootfs_a"
 umount "$ROOT_A_MNT"
 rmdir "$ROOT_A_MNT"
 
-echo "[5/6] Patching rootfs B..."
+echo "[4/5] Patching rootfs B..."
 ROOT_B_MNT=$(mktemp -d)
 mount -o loop,offset=${ROOT_B_OFF} "$BUILD_IMG" "$ROOT_B_MNT"
 patch_rootfs "$ROOT_B_MNT" "rootfs_b"
 umount "$ROOT_B_MNT"
 rmdir "$ROOT_B_MNT"
 
-# --- Step 6: Done ---
+# --- Step 5: Done ---
 
 mv "$BUILD_IMG" "$OUTPUT_IMG"
 
-echo "[6/6] Done!"
+echo "[5/5] Done!"
 echo ""
 echo "============================================"
 echo "  SystemCore Pi 5B image ready! (Beta 10 ${PI5B_VERSION})"
@@ -345,7 +308,6 @@ echo "  Image:   $OUTPUT_IMG"
 echo "  Size:    $(du -h "$OUTPUT_IMG" | cut -f1)"
 echo ""
 echo "  Patches applied:"
-echo "    - 4K-page kernel + modules (stock kernel is 16K, breaks Buildroot binaries)"
 echo "    - HDMI output enabled"
 echo "    - SPI CAN overlays disabled (no hardware on Pi 5B)"
 echo "    - flash-pico.sh (auto-flashes RP2350 Pico on any USB port)"
