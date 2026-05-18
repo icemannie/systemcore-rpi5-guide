@@ -407,7 +407,6 @@ def copy_into(src: Path, dst: Path, log: logging.Logger, dry_run: bool = False,
         dst.chmod(mode)
 
 
-
 # ---------------------------------------------------------------------------
 # Boot partition patches
 # ---------------------------------------------------------------------------
