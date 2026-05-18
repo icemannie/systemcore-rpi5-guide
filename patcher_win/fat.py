@@ -90,5 +90,3 @@ class FatPartition:
         """Check if a file or directory exists."""
         return self.fs.exists(path)
 
-    def listdir(self, path: str = "/") -> list[str]:
-        return self.fs.listdir(path)

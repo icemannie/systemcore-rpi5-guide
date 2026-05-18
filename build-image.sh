@@ -14,8 +14,8 @@ OUTPUT_IMG="${SCRIPT_DIR}/systemcore-pi5b-beta10-${PI5B_VERSION}.img"
 
 # Beta 10 partition layout:
 #   p1: boot selector (FAT32, 16M)  — autoboot.txt, config.txt (empty)
-#   p2: boot A (FAT32, 64M)         — kernel, DTBs, overlays, config.txt, cmdline.txt -> rootfs p5
-#   p3: boot B (FAT32, 64M)         — kernel, DTBs, overlays, config.txt, cmdline.txt -> rootfs p6
+#   p2: boot A (FAT32, 64M)         — config.txt, cmdline.txt -> rootfs p5
+#   p3: boot B (FAT32, 64M)         — config.txt, cmdline.txt -> rootfs p6
 #   p4: extended
 #   p5: rootfs A (ext4, 7G)
 #   p6: rootfs B (ext4, 7G)
@@ -53,17 +53,17 @@ echo ""
 mkdir -p "${SCRIPT_DIR}/cache"
 
 if [ ! -f "$IMAGE_ZIP" ]; then
-    echo "[1/6] Downloading upstream SystemCore Beta 10 image..."
+    echo "[1/5] Downloading upstream SystemCore Beta 10 image..."
     wget -c -O "$IMAGE_ZIP" "$IMAGE_URL"
 else
-    echo "[1/6] Upstream image already cached."
+    echo "[1/5] Upstream image already cached."
 fi
 
 # --- Step 3: Extract image ---
 
 rm -f "$BUILD_IMG" "$OUTPUT_IMG"
 
-echo "[2/6] Extracting image from zip..."
+echo "[2/5] Extracting image from zip..."
 INNER_IMG=$(unzip -l "$IMAGE_ZIP" | grep -oP '\S+\.img$' | head -1)
 if [ -z "$INNER_IMG" ]; then
     echo "ERROR: No .img file found inside zip"

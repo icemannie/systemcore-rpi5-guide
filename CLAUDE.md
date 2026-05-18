@@ -15,21 +15,16 @@ sudo dd if=systemcore-pi5b-beta10-v1.img of=/dev/sdX bs=4M status=progress
 
 ```
 build-image.sh        - Main script: downloads upstream image, patches everything
-check-image.sh        - Validates a built image (partition layout, patches)
 patch-image.py        - Standalone patcher for new upstream releases
 patcher/              - Python package backing patch-image.py
   core.py             - Partition discovery, mount tracking, per-patch logic, orchestrator
   gui.py              - Tkinter GUI with live log streaming + per-patch toggles
   cli.py              - argparse, --dry-run / --inspect / --validate / --only
   resources/          - Drop-in service overrides + udev rules + tmpfile configs
-boot9/                - Boot partition source files (config.txt, cmdline.txt, etc.)
 netboot/
   flash-pico.sh       - Pico flasher replacement (installed into image by build-image.sh)
   setup-netboot.sh    - TFTP + NFS netboot setup for WSL2 development
   cmdline_nfs.txt     - NFS boot cmdline template
-boot/                 - Legacy Beta 7 boot configs (superseded by boot9/)
-beta9/
-  apply-patches.sh    - Legacy patch script (superseded by build-image.sh)
 ```
 
 ## When to use which tool

@@ -32,7 +32,6 @@ def build_parser() -> argparse.ArgumentParser:
             "  sudo patch-image                                  # launch GUI\n"
             "  sudo patch-image upstream.img                     # patch in place\n"
             "  sudo patch-image upstream.img -o patched.img      # patch to new file\n"
-            "  sudo patch-image upstream.img --no-modules        # skip module install\n"
             "  sudo patch-image upstream.img --only install_mrccan,install_can_udev\n"
             "  sudo patch-image upstream.img --dry-run --verbose # show plan, do nothing\n"
             "  sudo patch-image upstream.img --inspect           # mount + leave open\n"

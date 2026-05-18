@@ -14,7 +14,7 @@ import re
 import shutil
 import tempfile
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -273,8 +273,7 @@ def _patch_dashboard(ext4: Ext4Partition, opts: PatchOptions,
     # List the js directory to find main.*.js
     # Use debugfs ls to find the file
     out = ext4._run_debugfs([f"ls {js_dir}"])
-    import re as _re
-    matches = _re.findall(r"main\.[a-f0-9]+\.js", out)
+    matches = re.findall(r"main\.[a-f0-9]+\.js", out)
     if not matches:
         log.warning("[%s] Dashboard main.*.js not found, skipping", label)
         return

@@ -17,7 +17,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import time
 import zipfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -407,16 +406,6 @@ def copy_into(src: Path, dst: Path, log: logging.Logger, dry_run: bool = False,
     if mode is not None:
         dst.chmod(mode)
 
-
-def write_file(dst: Path, content: str, log: logging.Logger, dry_run: bool = False,
-               mode: int = 0o644) -> None:
-    """Write `content` to `dst`, creating parents as needed."""
-    log.info("Writing %s (%d bytes)", dst, len(content))
-    if dry_run:
-        return
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(content)
-    dst.chmod(mode)
 
 
 # ---------------------------------------------------------------------------

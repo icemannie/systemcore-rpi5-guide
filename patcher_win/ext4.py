@@ -153,22 +153,6 @@ class Ext4Partition:
         """Copy a local file into the ext4 partition."""
         self.write_file(guest_path, local_path.read_bytes(), mode)
 
-    def copy_tree_in(self, local_dir: Path, guest_dir: str) -> None:
-        """Recursively copy a local directory tree into the ext4 partition."""
-        self._mkdir_p(guest_dir)
-        for item in local_dir.rglob("*"):
-            rel = item.relative_to(local_dir)
-            guest_path = f"{guest_dir}/{rel}".replace("\\", "/")
-            if item.is_dir():
-                self._mkdir_p(guest_path)
-            elif item.is_file():
-                self.copy_file_in(item, guest_path)
-
-    def mkdir(self, guest_path: str) -> None:
-        """Create a directory on the ext4 partition."""
-        self._run_debugfs([f"mkdir {guest_path}"], write=True)
-        self._modified = True
-
     def _mkdir_p(self, guest_path: str) -> None:
         """Create directory and all parents (like mkdir -p)."""
         parts = Path(guest_path).parts
@@ -185,6 +169,3 @@ class Ext4Partition:
         out = self._run_debugfs([f"stat {guest_path}"])
         return "Type:" in out
 
-    def stat(self, guest_path: str) -> str:
-        """Get stat output for a path."""
-        return self._run_debugfs([f"stat {guest_path}"])

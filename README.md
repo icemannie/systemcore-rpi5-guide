@@ -182,7 +182,6 @@ The stock image is missing `regulatory.db`. The build script installs the US reg
 
 ```
 build-image.sh          - End-to-end image builder (run with sudo)
-check-image.sh          - Validates a built image
 patch-image.py          - Standalone patcher for new upstream releases (GUI + CLI)
 patcher/                - Python package for patch-image.py
   core.py               - Mount + per-patch logic + orchestrator
@@ -195,8 +194,6 @@ patcher/                - Python package for patch-image.py
     robot-override.conf
     picoflasher-override.conf
     mrccan.conf
-boot/                   - Boot configs for Beta 7 (legacy)
-boot9/                  - Boot configs for Beta 9 (legacy)
 netboot/                - Network boot setup (development/debugging)
   flash-pico.sh         - Pico flasher replacement (installed into image)
   setup-netboot.sh      - Sets up TFTP + NFS on WSL2 for netboot

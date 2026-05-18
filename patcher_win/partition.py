@@ -113,7 +113,6 @@ def detect_layout(image: Path) -> ImageLayout:
                 if next_type not in (0x05, 0x0F, 0x85):
                     break
                 # Next EBR offset is relative to the extended partition start
-                _, next_lba_raw = struct.unpack_from("<II", ebr, 446 + MBR_ENTRY_SIZE + 8)
                 ebr_offset = (ebr_base + struct.unpack_from("<I", ebr, 446 + MBR_ENTRY_SIZE + 8)[0]) * SECTOR
                 if ebr_offset <= start:
                     break
