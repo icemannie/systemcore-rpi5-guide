@@ -376,7 +376,9 @@ class PatcherGUI:
                 logging.getLogger("patcher").error("Failed: %s", e)
                 logging.getLogger("patcher").debug(traceback.format_exc())
                 self.root.after(0, lambda: self.status_var.set("Failed"))
-                self.root.after(0, lambda: messagebox.showerror("Failed", str(e)))
+                # Bind `e` as default arg — the lambda fires after the
+                # except block exits, by which point `e` is unbound.
+                self.root.after(0, lambda e=e: messagebox.showerror("Failed", str(e)))
             finally:
                 self.root.after(0, lambda: self.patch_btn.configure(state="normal"))
 

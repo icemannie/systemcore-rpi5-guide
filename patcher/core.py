@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 from contextlib import contextmanager
@@ -645,6 +646,11 @@ def inspect(layout: ImageLayout, log: logging.Logger) -> dict[str, Path]:
 
 def preflight(opts: PatchOptions, log: logging.Logger) -> None:
     """Verify environment + inputs before doing any work."""
+    if sys.platform == "win32":
+        raise PreflightError(
+            "This patcher requires Linux (mount, sfdisk, dpkg-deb). "
+            "On Windows, run `python patch-image-win.py` instead."
+        )
     if os.geteuid() != 0:
         raise PreflightError("Must run as root (sudo) — mount and dpkg-deb need root.")
 
