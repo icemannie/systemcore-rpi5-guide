@@ -142,7 +142,7 @@ The build script replaces it with `flash-pico.sh` via a systemd override. This s
 The stock image expects 5 SPI CAN interfaces (`can_s0` through `can_s4`). The build script adds support for any number of USB-to-CAN adapters:
 
 - **Udev rule** triggers the CAN service restart when an adapter is plugged in. The match is scoped to `SUBSYSTEMS=="usb"` so vcan placeholders (see below) don't re-trigger the service and cause an infinite restart loop.
-- **canbusprocess override** discovers all CAN interfaces, renames them to `can_s0`, `can_s1`, etc., configures each with CAN FD (1Mbps/5Mbps) or falls back to standard CAN (1Mbps)
+- **canbusprocess override** discovers all CAN interfaces, renames them to `can_s0`, `can_s1`, etc., and configures each as **classic CAN at 1Mbps by default** — the conservative choice that works with any device. CAN FD is opt-in per bus via `/etc/can_bus_mode`. **Do not raise the FD data bitrate to 5Mbps** — the bits are too short for the device transceivers to decode, ACKs never come back, the bus silently goes `ERROR-PASSIVE`, and Phoenix 6 TX appears stuck (TX packets counter frozen, TX dropped climbing).
 - **Persistent port mapping** — each USB port path is mapped to a stable `can_sN` index in `/etc/can_port_map`, so the same physical port always gets the same name regardless of plug order (works with USB hubs)
 - **Discovery frame** — `cansend 000#00` sent on each bus after interface up
 - **Hot-plug** — plugging in a new adapter triggers automatic naming and configuration
@@ -151,7 +151,33 @@ The stock image expects 5 SPI CAN interfaces (`can_s0` through `can_s4`). The bu
 
 If no CAN adapter is plugged in, all services time out gracefully and the robot starts anyway (vcan placeholders satisfy the HAL).
 
-Compatible with any SocketCAN-supported USB adapter (candleLight/canable, PEAK, EMS, etc.). Mixed CAN FD and standard CAN adapters work together.
+Compatible with any SocketCAN-supported USB adapter (candleLight/canable, PEAK, EMS, etc.).
+
+> **WPILib version note.** Tested against WPILib 2027 Alpha 2 + Phoenix 6 25.90.0-alpha-2. The `can_s0..can_s4` naming, vcan-placeholder requirement, MrcCommDaemon control-file gate, and netcomm key all reflect that HAL surface — later alphas may rearrange or drop any of them. Re-validate when bumping WPILib.
+
+#### Overriding the bus mode per bus
+
+`/etc/can_bus_mode` is read at every `limelight_canbusprocess.service` start. Buses not listed default to **classic CAN at 1Mbps**. Format:
+
+```
+can_sN=<classic|fd> [bitrate] [dbitrate]
+```
+
+- `mode`: `classic` or `fd` (default `classic`)
+- `bitrate`: nominal bitrate in bps (default `1000000`)
+- `dbitrate`: data-phase bitrate for FD only (default `2000000`, the CTRE CANivore standard)
+
+Examples:
+
+```
+# Bus 0 stays default classic 1Mbps (line not needed)
+can_s1=fd                    # FD at 1Mbps/2Mbps — verify device responds before relying on this
+can_s2=classic 500000        # classic at 500kbps
+```
+
+After editing, `sudo systemctl restart limelight_canbusprocess.service` (or reboot) to apply.
+
+> **Why classic and not FD by default.** Every current Phoenix 6 device (TalonFX, Kraken, CANcoder, Pigeon 2, CANdle, CANdi, CANrange, TalonFXS) is CAN FD capable — but CTRE's FD implementation is built around the [CANivore](https://store.ctr-electronics.com/canivore/), their own USB-CAN adapter with an integrated CTRE-authored SocketCAN kernel driver. The generic candleLight-style `gs_usb` adapter most teams use is exactly the "hobbyist-style SocketCAN-USB product" CTRE built the CANivore to replace — they do not guarantee FD compatibility with it. Observed on this rig (gs_usb + CANdle + Phoenix 6 alpha-2): FD at 1M/5M OR 1M/2M lets the kernel TX frames but the device never acts on them. Likely culprits (not yet bisected): ISO vs non-ISO CRC mismatch, missing transceiver delay compensation (TDC) at 2 Mbps, or sample-point/SJW mismatch. Phoenix Tuner discovering the device is **not** sufficient verification — kernel TX counters can climb while the device silently ignores every frame. If you have a CANivore, use it for FD; if you have a gs_usb adapter, stay on classic.
 
 ### MrcCommDaemon unblock (`/dev/mrccan/`)
 

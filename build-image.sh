@@ -143,9 +143,34 @@ EOF
 SUBSYSTEM=="net", ACTION=="add", ATTR{type}=="280", SUBSYSTEMS=="usb", RUN+="/bin/systemctl restart limelight_canbusprocess.service"
 EOF
 
-    # canbusprocess: find, rename, and configure ALL CAN interfaces
+    # canbusprocess: find, rename, and configure ALL CAN interfaces.
+    # Keep in sync with patcher/resources/canbusprocess-override.conf
     mkdir -p "$MNT/etc/systemd/system/limelight_canbusprocess.service.d"
     cat > "$MNT/etc/systemd/system/limelight_canbusprocess.service.d/override.conf" << 'EOF'
+# CAN bus mode is configurable per bus via /etc/can_bus_mode.
+# Default: classic CAN at 1Mbps — works with every CAN device.
+#
+# Why not CAN FD by default: CTRE supports CAN FD on all current Phoenix 6
+# devices (TalonFX, Kraken, CANcoder, Pigeon 2, CANdle, CANdi, CANrange,
+# TalonFXS), but their FD implementation is built around the CANivore
+# (their own USB-CAN adapter with an integrated CTRE-authored SocketCAN
+# kernel driver). The generic candleLight-style gs_usb adapter we use here
+# is exactly the "hobbyist-style SocketCAN-USB product" CTRE built the
+# CANivore to replace — CTRE explicitly does not guarantee FD compatibility
+# with it. On this rig (gs_usb + CANdle + Phoenix 6 alpha-2), FD at 1M/5M
+# OR 1M/2M lets the kernel TX frames but the CANdle never acts on them.
+# Likely causes (not yet bisected): ISO vs non-ISO CAN FD CRC mismatch,
+# missing TDC at 2Mbps, or sample-point/SJW mismatch.
+# Classic CAN works because CTRE classic-CAN compatibility predates and
+# does not depend on the CANivore driver.
+#
+# Format: can_sN=<classic|fd> [bitrate] [dbitrate]
+# If you opt into FD on a gs_usb adapter, verify per device after enabling
+# — Phoenix Tuner discovering the device is NOT sufficient (kernel TX may
+# climb while the device silently ignores everything).
+# Use CTRE-standard FD timing (1Mbps nominal / 2Mbps data) — do NOT use
+# 5Mbps data bitrate (bits too short for real transceivers to decode, bus
+# immediately goes ERROR-PASSIVE).
 [Service]
 ExecStart=
 ExecStart=/bin/bash -c '\
@@ -183,15 +208,25 @@ ExecStart=/bin/bash -c '\
     ip link set "_can_swap" name "$IFACE" 2>/dev/null; \
   done; \
   IFACES=$(ls -d /sys/class/net/can_s* 2>/dev/null | xargs -n1 basename); \
+  FD_CFG=/etc/can_bus_mode; \
   if [ -n "$IFACES" ]; then \
     for iface in $IFACES; do \
       echo "Configuring $iface..."; \
       ip link set $iface down 2>/dev/null; \
-      if ip link set $iface type can bitrate 1000000 dbitrate 5000000 fd on 2>/dev/null; then \
-        echo "$iface: CAN FD (1Mbps/5Mbps)"; \
+      MODE_LINE=$(grep "^$iface=" $FD_CFG 2>/dev/null | head -1 | cut -d= -f2-); \
+      MODE=$(echo $MODE_LINE | cut -d" " -f1); \
+      BR=$(echo $MODE_LINE | cut -d" " -f2); \
+      DBR=$(echo $MODE_LINE | cut -d" " -f3); \
+      [ -z "$MODE" ] && MODE=fd; \
+      [ -z "$BR" ] && BR=1000000; \
+      [ -z "$DBR" ] && DBR=2000000; \
+      if [ "$MODE" = "fd" ] && ip link set $iface type can bitrate $BR sample-point 0.875 dbitrate $DBR dsample-point 0.750 fd on 2>/dev/null; then \
+        echo "$iface: CAN FD ($BR / $DBR)"; \
+      elif [ "$MODE" = "fd" ] && ip link set $iface type can bitrate $BR fd off 2>/dev/null; then \
+        echo "$iface: classic CAN ($BR) — FD requested but driver rejected"; \
       else \
-        ip link set $iface type can bitrate 1000000 2>/dev/null; \
-        echo "$iface: standard CAN (1Mbps)"; \
+        ip link set $iface type can bitrate $BR fd off 2>/dev/null; \
+        echo "$iface: classic CAN ($BR)"; \
       fi; \
       ip link set $iface txqueuelen 1000; \
       ip link set $iface up; \
@@ -311,7 +346,7 @@ echo "  Patches applied:"
 echo "    - HDMI output enabled"
 echo "    - SPI CAN overlays disabled (no hardware on Pi 5B)"
 echo "    - flash-pico.sh (auto-flashes RP2350 Pico on any USB port)"
-echo "    - USB-CAN multi-adapter support (can_s0-s4, CAN FD 1Mbps/5Mbps)"
+echo "    - USB-CAN multi-adapter support (can_s0-s4, classic CAN 1Mbps by default; opt into CAN FD per-bus via /etc/can_bus_mode after verifying device support)"
 echo "    - vcan placeholders auto-fill missing can_s0-s4 (HAL requires all 5)"
 echo "    - CAN is optional (30s timeout, robot starts regardless)"
 echo "    - Hot-plug: new adapters auto-named and configured"
