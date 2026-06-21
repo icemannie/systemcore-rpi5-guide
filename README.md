@@ -4,6 +4,10 @@ Run [Limelight SystemCore OS](https://github.com/LimelightVision/systemcore-os-p
 
 ## Quick Start
 
+
+Thanks to netarcx (Trent) for original conversion to USB
+
+
 USB To Canbus adapter RH02 Plus (in bottom right USB slot)
 
 Go to canable.io/updater/canable2.html and flash candlelight firmware to adapter
@@ -24,20 +28,29 @@ Connect to SYSTEMCORE WIFI - password PASSWORD
 
 Go to Configure and Update tab and set your team number
 
-Connect to Radio or set Ethernet address to 10.TE.AM.2 for ether net connection
+Set Ethernet address to 10.TE.AM.2 for ethernet connection
 
 Return to Home tab and choose Terminal
 
-Make the changes in the file Systemcorepatches.txt individually
+Make the changes in the file Systemcorepatches.txt - copy each of the 4 individually and paste into Terminal
 
 Reboot using 
 
 sudo systemctl daemon-reload
 sudo reboot
 
+
+Connect via radio or ethernet
+
 Create your own code and download or use the examples at https://github.com/fondyfire2194/SystemcoreRPI5.git
 
 It has 2 Sparkmax (ID 20 and 24) and 1 Kraken (ID 10) code to use the CANbus adapter
+
+Examples use new features
+•	Op Modes
+•	V3 Commands
+•	State machine
+
 
 Open 2027 Driver Station and Elastic. Set adresses to 10.TE.AM.2
 
