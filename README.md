@@ -4,6 +4,12 @@ Run [Limelight SystemCore OS](https://github.com/LimelightVision/systemcore-os-p
 
 ## Quick Start
 
+USB To Canbus adapter RH02 Plus (in bottom right USB slot)
+
+Go to canable.io/updater/canable2.html and flash candlelight firmware to adapter
+
+
+
 ```bash
 git clone https://github.com/icemannie/systemcore-rpi5-guide.git
 cd systemcore-rpi5-guide
@@ -12,11 +18,26 @@ sudo ./build-image.sh
 
 This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card and boot:
 
-```bash
-sudo dd if=systemcore-pi5b-beta10-v1.img of=/dev/sdX bs=4M status=progress
-```
+Insert the SD card into your Pi 5 and power on.
 
-Insert the SD card into your Pi 5 and power on. No further configuration needed.
+Connect to SYSTEMCORE WIFI - password PASSWORD
+
+Go to Configure and Update tab and set your team number
+
+Connect to Radio or set Ethernet address to 10.TE.AM.2 for ether net connection
+
+Return to Home tab and choose Terminal
+
+Make the changes in the file Systemcorepatches.txt individually
+
+Reboot using 
+
+sudo systemctl daemon-reload
+sudo reboot
+
+Create your own code and download or use the examples at https://github.com/fondyfire2194/SystemcoreRPI5.git
+
+It has Sparkmax and Kraken code to use the CANbus adapter
 
 ## Patching new upstream releases (`patch-image.py`)
 
