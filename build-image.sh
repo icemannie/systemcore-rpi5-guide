@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FLASH_PICO="${SCRIPT_DIR}/netboot/flash-pico.sh"
 REGDB_DEB="${SCRIPT_DIR}/beta9/wireless-regdb_2025.10.07-0ubuntu1~24.04.1_all.deb"
 
-IMAGE_URL="https://github.com/LimelightVision/systemcore-os-public/releases/download/limelightosr-beta-10-138/limelightsystemcorebetacm5-limelightosr-beta-10.zip"
+IMAGE_URL="https://github.com/LimelightVision/systemcore-os-public/tree/limelightosr-beta-10-138"
 IMAGE_ZIP="${SCRIPT_DIR}/cache/limelightsystemcorebetacm5-limelightosr-beta-10.zip"
 BUILD_IMG="${SCRIPT_DIR}/systemcore-pi5b-beta10.img"
 OUTPUT_IMG="${SCRIPT_DIR}/systemcore-pi5b-beta10-${PI5B_VERSION}.img"
