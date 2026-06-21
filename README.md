@@ -20,7 +20,7 @@ cd systemcore-rpi5-guide
 sudo ./build-image.sh
 ```
 
-This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card and boot:
+This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card.
 
 Insert the SD card into your Pi 5 and power on.
 
