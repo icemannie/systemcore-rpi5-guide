@@ -24,6 +24,9 @@ This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card and boo
 
 Insert the SD card into your Pi 5 and power on.
 
+
+See https://github.com/wpilibsuite/SystemcoreTesting/tree/main for more information
+
 Connect to SYSTEMCORE WIFI - password PASSWORD
 
 Go to Configure and Update tab and set your team number
@@ -32,7 +35,7 @@ Set Ethernet address to 10.TE.AM.2 for ethernet connection
 
 Return to Home tab and choose Terminal
 
-Make the changes in the file Systemcorepatches.txt - copy each of the 4 individually and paste into Terminal
+Make the changes in the file SystemcorePatches.txt - copy each of the 4 individually and paste into Terminal
 
 Reboot using 
 
@@ -40,7 +43,7 @@ sudo systemctl daemon-reload
 sudo reboot
 
 
-Connect via radio or ethernet
+Connect via radio or ethernet to 10.TE.AM.2
 
 Create your own code and download or use the examples at https://github.com/fondyfire2194/SystemcoreRPI5.git
 
@@ -56,9 +59,9 @@ Open 2027 Driver Station and Elastic. Set adresses to 10.TE.AM.2
 
 If you used our examples, there should be Teleop and Auto Opmodes available.
 
-Canbus adapter lights shoule be flashing.
+Canbus adapter lights should be flashing.
 
-
+Also add package https://alpha.rhc2.revrobotics.com/download-site/debian/rev-robotics-rev-hardware-client-alpha_1.1.1_arm64.ipk
 
 ## Patching new upstream releases (`patch-image.py`)
 
