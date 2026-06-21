@@ -5,7 +5,7 @@ Run [Limelight SystemCore OS](https://github.com/LimelightVision/systemcore-os-p
 ## Quick Start
 
 ```bash
-git clone https://github.com/netarcx/systemcore-rpi5-guide.git
+git clone https://github.com/icemannie/systemcore-rpi5-guide.git
 cd systemcore-rpi5-guide
 sudo ./build-image.sh
 ```
