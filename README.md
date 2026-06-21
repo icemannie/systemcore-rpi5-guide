@@ -37,7 +37,15 @@ sudo reboot
 
 Create your own code and download or use the examples at https://github.com/fondyfire2194/SystemcoreRPI5.git
 
-It has Sparkmax and Kraken code to use the CANbus adapter
+It has 2 Sparkmax (ID 20 and 24) and 1 Kraken (ID 10) code to use the CANbus adapter
+
+Open 2027 Driver Station and Elastic. Set adresses to 10.TE.AM.2
+
+If you used our examples, there should be Teleop and Auto Opmodes available.
+
+Canbus adapter lights shoule be flashing.
+
+
 
 ## Patching new upstream releases (`patch-image.py`)
 
