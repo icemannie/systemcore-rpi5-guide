@@ -48,9 +48,8 @@ Go to Configure and Update tab and set your team number
 
 Set Ethernet address to 10.TE.AM.2 for ethernet connection (optional)
 
-Return to Home tab and choose Terminal
 
-Copy and paste each of the following 4 patches in Terminal, hit Enter each time
+Copy and paste each of the following 4 patches in WSL or Systemcore Terminal
 
 ```bash
 echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
@@ -88,6 +87,15 @@ WantedBy=default.target
 EOF
 
 ```
+
+//Check that changes took effect
+
+```bash
+cat /etc/systemd/system/limelight_canbusprocess.service
+
+```
+
+
 //Patch 2
 ```bash
 echo "=== Patch 2/4: mrccomm.service (char device creation fix) ==="
@@ -111,6 +119,14 @@ EOF
 
 ```
 
+//Check that changes took effect
+
+```bash
+cat /etc/systemd/system/mrccomm.service
+
+```
+
+
 //Patch 3
 ```bash
 echo "=== Patch 3/4: limelight_motioncoredaemon.service (ordering fix) ==="
@@ -132,6 +148,15 @@ WantedBy=multi-user.target
 EOF
 
 ```
+
+
+//Check that changes took effect
+
+```bash
+cat /etc/systemd/system/limelight_motioncoredaemon.service
+
+```
+
 //Patch 4 ONLY RUN THIS ONCE
 //Check by using cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
 //Look for the 2 MODPROBE LINES before the while line near the end
@@ -141,6 +166,15 @@ echo "=== Patch 4/4: override.conf (insert modprobe lines before monitor loop) =
 sudo sed -i '/total can_s\* interfaces present/a\  modprobe can_sender 2>/dev/null; \\\n  modprobe robot_heartbeat 2>/dev/null; \\' /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
 
 ```
+
+
+//Check that changes took effect
+
+```bash
+cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
+
+```
+
 When complete reboot using 
 ```bash
 sudo systemctl daemon-reload
