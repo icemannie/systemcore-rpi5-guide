@@ -175,10 +175,10 @@ cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
 
 ```
 
-When complete reboot using 
+When complete shutdown and reboot using 
+
 ```bash
-sudo systemctl daemon-reload
-sudo reboot
+sudo shutdown -r now
 
 ```
 
