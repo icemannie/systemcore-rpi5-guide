@@ -132,10 +132,10 @@ echo "=== Patch 4/4: override.conf (insert modprobe lines before monitor loop) =
 sudo sed -i '/total can_s\* interfaces present/a\  modprobe can_sender 2>/dev/null; \\\n  modprobe robot_heartbeat 2>/dev/null; \\' /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
 ```
 When complete reboot using 
-
+```bash
 sudo systemctl daemon-reload
 sudo reboot
-
+```
 
 Connect via radio or ethernet to 10.TE.AM.2
 
