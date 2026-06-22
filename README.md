@@ -22,7 +22,7 @@ The Limelight Systemcore OS release name was changed in the build.sh file. Still
 To build the image do
 
 
-```bash
+'''bash
 git clone https://github.com/icemannie/systemcore-rpi5-guide.git
 cd systemcore-rpi5-guide
 sudo ./build-image.sh
@@ -44,6 +44,41 @@ Set Ethernet address to 10.TE.AM.2 for ethernet connection
 
 Return to Home tab and choose Terminal
 
+'''bash
+echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
+tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
+[Unit]
+Description=limelight_canbus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'sleep 4 && \
+  ip link set can_s0 type can bitrate 1000000 && \
+  ip link set can_s0 txqueuelen 1000 && \
+  ip link set can_s0 up && \
+  ip link set can_s1 type can bitrate 1000000 && \
+  ip link set can_s1 txqueuelen 1000 && \
+  ip link set can_s1 up && \
+  ip link set can_s2 type can bitrate 1000000 && \
+  ip link set can_s2 txqueuelen 1000 && \
+  ip link set can_s2 up && \
+  ip link set can_s3 type can bitrate 1000000 && \
+  ip link set can_s3 txqueuelen 1000 && \
+  ip link set can_s3 up && \
+  ip link set can_s4 type can bitrate 1000000 && \
+  ip link set can_s4 txqueuelen 1000 && \
+  ip link set can_s4 up'
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=0
+StartLimitBurst=1000
+
+[Install]
+WantedBy=default.target
+EOF
+'''
 Make the changes in the file SystemcorePatches.txt - copy each of the 4 individually and paste into Terminal
 
 When complete reboot using 

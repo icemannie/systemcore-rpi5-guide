@@ -1,5 +1,5 @@
 //Patch 1
-
+'''bash
 echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
 tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
 [Unit]
@@ -33,7 +33,7 @@ StartLimitBurst=1000
 [Install]
 WantedBy=default.target
 EOF
-
+'''
 //Patch 2
 
 echo "=== Patch 2/4: mrccomm.service (char device creation fix) ==="
