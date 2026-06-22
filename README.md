@@ -99,7 +99,7 @@ cat /etc/systemd/system/limelight_canbusprocess.service
 //Patch 2
 ```bash
 echo "=== Patch 2/4: mrccomm.service (char device creation fix) ==="
-tee /etc/systemd/system/mrccomm.service << 'EOF'
+sudo tee /etc/systemd/system/mrccomm.service << 'EOF'
 [Unit]
 Description=mrccomm
 After=network.target limelight_canbusprocess.service
@@ -130,7 +130,7 @@ cat /etc/systemd/system/mrccomm.service
 //Patch 3
 ```bash
 echo "=== Patch 3/4: limelight_motioncoredaemon.service (ordering fix) ==="
-tee /etc/systemd/system/limelight_motioncoredaemon.service << 'EOF'
+sudo tee /etc/systemd/system/limelight_motioncoredaemon.service << 'EOF'
 [Unit]
 Description=Limelight Motioncore Daemon
 After=network.target limelight_canbusprocess.service
