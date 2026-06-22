@@ -21,11 +21,12 @@ The Limelight Systemcore OS release name was changed in the build.sh file. Still
 
 To build the image do
 
+
 ```bash
 git clone https://github.com/icemannie/systemcore-rpi5-guide.git
 cd systemcore-rpi5-guide
 sudo ./build-image.sh
-...
+```
 
 This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card.
 
