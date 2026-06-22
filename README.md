@@ -53,7 +53,7 @@ Copy and paste each of the following 4 patches in WSL or Systemcore Terminal
 
 ```bash
 echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
-tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
+sudo tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
 [Unit]
 Description=limelight_canbus
 Wants=network-online.target
