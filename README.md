@@ -11,6 +11,12 @@ Claude was used extensively to work out the patches.
 
 WSL was the Linux environment used
 
+For more essential information
+
+https://github.com/wpilibsuite/SystemCoreTesting 
+
+https://docs.wpilib.org/en/2027/
+
 
 USB To Canbus adapter RH02 Plus (in bottom right USB slot)
 
@@ -28,7 +34,7 @@ cd systemcore-rpi5-guide
 sudo ./build-image.sh
 ```
 
-This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card.
+This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card. Balena Etcher is good.
 
 Insert the SD card into your Pi 5 and power on.
 
@@ -40,11 +46,11 @@ Limelight Hardware manager 2.07 Find Devices will show available Systemcore conn
 
 Go to Configure and Update tab and set your team number
 
-Set Ethernet address to 10.TE.AM.2 for ethernet connection
+Set Ethernet address to 10.TE.AM.2 for ethernet connection (optional)
 
 Return to Home tab and choose Terminal
 
-Copy and paste each of the following 4 patches in Terminal
+Copy and paste each of the following 4 patches in Terminal, hit Enter each time
 
 ```bash
 echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
@@ -143,7 +149,7 @@ Create your own code using VSCode 2027 or use the examples at https://github.com
 
 The example has 2 Sparkmax (ID 20 and 24) and 1 Kraken (ID 10) code to use the CANbus adapter
 
-Examples uses
+Examples use
 •	Op Modes
 •	V3 Commands
 •	State machine
@@ -153,7 +159,7 @@ Open 2027 Driver Station and Elastic. Set adresses to 10.TE.AM.2
 
 If you used our examples, there should be Teleop and Auto Opmodes available.
 
-Canbus adapter lights should be flashing.
+Canbus adapter lights should be flashing. The Systemcore System tab should show CAN_S0 up and its % usage
 
 To avoid possible SC card corruption, always do a software shutdown sudo shutdown -h now before powering off the PI
 
