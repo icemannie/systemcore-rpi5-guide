@@ -43,6 +43,45 @@ Go to Configure and Update tab and set your team number
 Set Ethernet address to 10.TE.AM.2 for ethernet connection
 
 Return to Home tab and choose Terminal
+
+Copy and paste each of the following 4 patches in Terminal
+
+```bash
+echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
+tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
+[Unit]
+Description=limelight_canbus
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'sleep 4 && \
+  ip link set can_s0 type can bitrate 1000000 && \
+  ip link set can_s0 txqueuelen 1000 && \
+  ip link set can_s0 up && \
+  ip link set can_s1 type can bitrate 1000000 && \
+  ip link set can_s1 txqueuelen 1000 && \
+  ip link set can_s1 up && \
+  ip link set can_s2 type can bitrate 1000000 && \
+  ip link set can_s2 txqueuelen 1000 && \
+  ip link set can_s2 up && \
+  ip link set can_s3 type can bitrate 1000000 && \
+  ip link set can_s3 txqueuelen 1000 && \
+  ip link set can_s3 up && \
+  ip link set can_s4 type can bitrate 1000000 && \
+  ip link set can_s4 txqueuelen 1000 && \
+  ip link set can_s4 up'
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=0
+StartLimitBurst=1000
+
+[Install]
+WantedBy=default.target
+EOF
+```
+//Patch 2
 ```bash
 echo "=== Patch 2/4: mrccomm.service (char device creation fix) ==="
 tee /etc/systemd/system/mrccomm.service << 'EOF'
@@ -84,7 +123,7 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 ```
-
+//Patch 4 ONLY RUN THIS ONCE
 //Check by using cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
 //Look for the 2 MODPROBE LINES before the while line near the end
 //There will be multiples if run more than once
