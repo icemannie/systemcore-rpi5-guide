@@ -22,7 +22,7 @@ The Limelight Systemcore OS release name was changed in the build.sh file. Still
 To build the image do
 
 
-'''bash
+```bash
 git clone https://github.com/icemannie/systemcore-rpi5-guide.git
 cd systemcore-rpi5-guide
 sudo ./build-image.sh
@@ -44,7 +44,7 @@ Set Ethernet address to 10.TE.AM.2 for ethernet connection
 
 Return to Home tab and choose Terminal
 
-'''bash
+```bash
 echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
 tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
 [Unit]
@@ -78,7 +78,8 @@ StartLimitBurst=1000
 [Install]
 WantedBy=default.target
 EOF
-'''
+```
+
 Make the changes in the file SystemcorePatches.txt - copy each of the 4 individually and paste into Terminal
 
 When complete reboot using 
