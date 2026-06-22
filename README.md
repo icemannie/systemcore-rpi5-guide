@@ -9,7 +9,7 @@ Thanks to netarcx (Trent) for original conversion to USB. See https://github.com
 
 Claude was used extensively to work out the patches.
 
-WSL was the Linux environment used
+WSL
 
 For more essential information
 
