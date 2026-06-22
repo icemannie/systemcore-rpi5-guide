@@ -161,7 +161,12 @@ If you used our examples, there should be Teleop and Auto Opmodes available.
 
 Canbus adapter lights should be flashing. The Systemcore System tab should show CAN_S0 up and its % usage
 
-To avoid possible SC card corruption, always do a software shutdown sudo shutdown -h now before powering off the PI
+To avoid possible SC card corruption, always do a software shutdown 
+
+```bash
+sudo shutdown -h now
+```
+ before powering off the PI
 
 Also from home screen, add package https://alpha.rhc2.revrobotics.com/download-site/debian/rev-robotics-rev-hardware-client-alpha_1.1.1_arm64.ipk to view can connected devices.
 
