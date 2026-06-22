@@ -86,6 +86,7 @@ StartLimitBurst=1000
 [Install]
 WantedBy=default.target
 EOF
+
 ```
 //Patch 2
 ```bash
@@ -107,6 +108,7 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
+
 ```
 
 //Patch 3
@@ -128,6 +130,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
+
 ```
 //Patch 4 ONLY RUN THIS ONCE
 //Check by using cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
@@ -136,11 +139,13 @@ EOF
 ```bash
 echo "=== Patch 4/4: override.conf (insert modprobe lines before monitor loop) ==="
 sudo sed -i '/total can_s\* interfaces present/a\  modprobe can_sender 2>/dev/null; \\\n  modprobe robot_heartbeat 2>/dev/null; \\' /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
+
 ```
 When complete reboot using 
 ```bash
 sudo systemctl daemon-reload
 sudo reboot
+
 ```
 
 Connect via radio or ethernet to 10.TE.AM.2
