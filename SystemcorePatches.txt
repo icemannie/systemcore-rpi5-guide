@@ -1,5 +1,5 @@
 //Patch 1
-'''bash
+```bash
 echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
 tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
 [Unit]
@@ -33,9 +33,9 @@ StartLimitBurst=1000
 [Install]
 WantedBy=default.target
 EOF
-'''
+```
 //Patch 2
-
+```bash
 echo "=== Patch 2/4: mrccomm.service (char device creation fix) ==="
 tee /etc/systemd/system/mrccomm.service << 'EOF'
 [Unit]
@@ -54,10 +54,10 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
-
+```
 
 //Patch 3
-
+```bash
 echo "=== Patch 3/4: limelight_motioncoredaemon.service (ordering fix) ==="
 tee /etc/systemd/system/limelight_motioncoredaemon.service << 'EOF'
 [Unit]
@@ -75,11 +75,12 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-
+```
 //Patch 4 ONLY RUN THIS ONCE
 //Check by using cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
 //Look for the 2 MODPROBE LINES before the while line near the end
 //There will be multiples if run more than once
-
+```bash
 echo "=== Patch 4/4: override.conf (insert modprobe lines before monitor loop) ==="
 sudo sed -i '/total can_s\* interfaces present/a\  modprobe can_sender 2>/dev/null; \\\n  modprobe robot_heartbeat 2>/dev/null; \\' /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
+```
