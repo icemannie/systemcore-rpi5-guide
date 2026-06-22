@@ -43,45 +43,55 @@ Go to Configure and Update tab and set your team number
 Set Ethernet address to 10.TE.AM.2 for ethernet connection
 
 Return to Home tab and choose Terminal
-
 ```bash
-echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
-tee /etc/systemd/system/limelight_canbusprocess.service << 'EOF'
+echo "=== Patch 2/4: mrccomm.service (char device creation fix) ==="
+tee /etc/systemd/system/mrccomm.service << 'EOF'
 [Unit]
-Description=limelight_canbus
-Wants=network-online.target
-After=network-online.target
+Description=mrccomm
+After=network.target limelight_canbusprocess.service
+Requires=limelight_canbusprocess.service
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -c 'sleep 4 && \
-  ip link set can_s0 type can bitrate 1000000 && \
-  ip link set can_s0 txqueuelen 1000 && \
-  ip link set can_s0 up && \
-  ip link set can_s1 type can bitrate 1000000 && \
-  ip link set can_s1 txqueuelen 1000 && \
-  ip link set can_s1 up && \
-  ip link set can_s2 type can bitrate 1000000 && \
-  ip link set can_s2 txqueuelen 1000 && \
-  ip link set can_s2 up && \
-  ip link set can_s3 type can bitrate 1000000 && \
-  ip link set can_s3 txqueuelen 1000 && \
-  ip link set can_s3 up && \
-  ip link set can_s4 type can bitrate 1000000 && \
-  ip link set can_s4 txqueuelen 1000 && \
-  ip link set can_s4 up'
-Restart=on-failure
-RestartSec=5
-StartLimitInterval=0
-StartLimitBurst=1000
+ExecStartPre=/bin/sh -c 'rm -f /dev/mrccan/controldata /dev/mrccan/matchinfo; mknod /dev/mrccan/controldata c 10 260; mknod /dev/mrccan/matchinfo c 10 262; chmod 666 /dev/mrccan/controldata /dev/mrccan/matchinfo; chmod 555 /dev/mrccan'
+ExecStart=/usr/bin/MrcCommDaemon
+ExecStartPost=/bin/sh -c 'sleep 1; chmod 755 /dev/mrccan'
+Restart=always
+RestartSec=3
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 ```
 
-Make the changes in the file SystemcorePatches.txt - copy each of the 4 individually and paste into Terminal
+//Patch 3
+```bash
+echo "=== Patch 3/4: limelight_motioncoredaemon.service (ordering fix) ==="
+tee /etc/systemd/system/limelight_motioncoredaemon.service << 'EOF'
+[Unit]
+Description=Limelight Motioncore Daemon
+After=network.target limelight_canbusprocess.service
+Requires=limelight_canbusprocess.service
 
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/motioncoredaemon/motioncoredaemon
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+//Check by using cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
+//Look for the 2 MODPROBE LINES before the while line near the end
+//There will be multiples if run more than once
+```bash
+echo "=== Patch 4/4: override.conf (insert modprobe lines before monitor loop) ==="
+sudo sed -i '/total can_s\* interfaces present/a\  modprobe can_sender 2>/dev/null; \\\n  modprobe robot_heartbeat 2>/dev/null; \\' /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
+```
 When complete reboot using 
 
 sudo systemctl daemon-reload
