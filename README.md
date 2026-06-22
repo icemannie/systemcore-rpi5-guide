@@ -34,7 +34,7 @@ cd systemcore-rpi5-guide
 sudo ./build-image.sh
 ```
 
-This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card. Balena Etcher is good.
+This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card. Balena Etcher can be used
 
 Insert the SD card into your Pi 5 and power on.
 
