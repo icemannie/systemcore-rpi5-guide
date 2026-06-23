@@ -1,17 +1,20 @@
 # FRC SystemCore on Raspberry Pi 5
 
-Run [Limelight SystemCore OS](https://github.com/LimelightVision/systemcore-os-public) on a standard Raspberry Pi 5 Model B instead of the Compute Module 5 it was designed for.
+Run [Limelight SystemCore OS](https://github.com/LimelightVision/systemcore-os-public) on a standard Raspberry Pi 5 Model B with USB Canbus instead of the Compute Module 5 it was designed for.
 
 ## Quick Start
 
 
 Thanks to netarcx (Trent) for original conversion to USB. See https://github.com/netarcx/systemcore-rpi5-guide
 
-Claude was used extensively to work out the patches.
+The Limelight Systemcore OS release name was changed from the original build.sh file. Still release 10.
+
+Claude was used to work out the patches.
 
 WSL - Windows Subsystem Linux
 
 Balena Etcher
+
 
 For more Systemcore information
 
@@ -23,8 +26,9 @@ https://docs.wpilib.org/en/2027/
 USB To Canbus adapter RH02 Plus https://www.amazon.com/dp/B0F9F9J3WN?ref=ppx_yo2ov_dt_b_fed_asin_title#:~:text=Ask%20something%20else-,USB%20to%20CAN%20FD%20Converter%20Adapter%20Based%20on%20Canable%202.0%20Supports%205%20Mbps,-Visit%20the%20Jhoinrch(in bottom right USB slot)
 
 https://canable.io/updater/canable2.html and flash Candlelight firmware to adapter
+Set adapter Boot switch down to flash then up when complete
+Use R120 (ohm) switch as appropriate to your setup
 
-The Limelight Systemcore OS release name was changed from the original build.sh file. Still release 10.
 
 
 To build the image
