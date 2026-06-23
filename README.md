@@ -9,23 +9,29 @@ Thanks to netarcx (Trent) for original conversion to USB. See https://github.com
 
 Claude was used extensively to work out the patches.
 
-WSL
+WSL - Windows Subsystem Linux
 
-For more essential information
+Balena Etcher
+
+For more Systemcore information
 
 https://github.com/wpilibsuite/SystemCoreTesting 
 
 https://docs.wpilib.org/en/2027/
 
 
-USB To Canbus adapter RH02 Plus (in bottom right USB slot)
+USB To Canbus adapter RH02 Plus https://www.amazon.com/dp/B0F9F9J3WN?ref=ppx_yo2ov_dt_b_fed_asin_title#:~:text=Ask%20something%20else-,USB%20to%20CAN%20FD%20Converter%20Adapter%20Based%20on%20Canable%202.0%20Supports%205%20Mbps,-Visit%20the%20Jhoinrch(in bottom right USB slot)
 
-Go to canable.io/updater/canable2.html and flash candlelight firmware to adapter
+Go to 
+```bash
+canable.io/updater/canable2.html 
+```
+and flash candlelight firmware to adapter
 
-The Limelight Systemcore OS release name was changed in the build.sh file. Still release 10.
+The Limelight Systemcore OS release name was changed from the original build.sh file. Still release 10.
 
 
-To build the image do
+To build the image
 
 
 ```bash
@@ -34,7 +40,7 @@ cd systemcore-rpi5-guide
 sudo ./build-image.sh
 ```
 
-This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card. Balena Etcher can be used
+This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card.
 
 Insert the SD card into your Pi 5 and power on.
 
@@ -49,7 +55,7 @@ Go to Configure and Update tab and set your team number
 Set Ethernet address to 10.TE.AM.2 for ethernet connection (optional)
 
 
-Copy and paste each of the following 4 patches in WSL or Systemcore Terminal
+Copy and paste each of the following 4 patches in Systemcore Terminal
 
 ```bash
 echo "=== Patch 1/4: limelight_canbusprocess.service (fix unbalanced quote) ==="
@@ -158,7 +164,6 @@ cat /etc/systemd/system/limelight_motioncoredaemon.service
 ```
 
 //Patch 4 ONLY RUN THIS ONCE
-//Check by using cat /etc/systemd/system/limelight_canbusprocess.service.d/override.conf
 //Look for the 2 MODPROBE LINES before the while line near the end
 //There will be multiples if run more than once
 ```bash
@@ -200,24 +205,12 @@ If you used our examples, there should be Teleop and Auto Opmodes available.
 
 Canbus adapter lights should be flashing. The Systemcore System tab should show CAN_S0 up and its % usage
 
-To avoid possible SC card corruption, always do a software shutdown 
+To avoid possible SC card corruption, always do a software shutdown before powering off the PI
 
 ```bash
 sudo shutdown -h now
 ```
- before powering off the PI
+ 
 
 Also from home screen, add package https://alpha.rhc2.revrobotics.com/download-site/debian/rev-robotics-rev-hardware-client-alpha_1.1.1_arm64.ipk to view can connected devices.
 
-
-
-## Tested on
-
-- Raspberry Pi 5 Model B (4GB/8GB)
-- SystemCore Beta 10 (`limelightosr-beta-10`)
-- Kernel: stock upstream 16K-page kernel (works on Pi 5B as-is since Beta 10)
-- Host: WSL2 on Windows 11
-
-## License
-
-The kernel is licensed under GPL-2.0 (same as the Linux kernel). Boot configuration files and scripts are provided as-is.
