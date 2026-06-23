@@ -22,11 +22,7 @@ https://docs.wpilib.org/en/2027/
 
 USB To Canbus adapter RH02 Plus https://www.amazon.com/dp/B0F9F9J3WN?ref=ppx_yo2ov_dt_b_fed_asin_title#:~:text=Ask%20something%20else-,USB%20to%20CAN%20FD%20Converter%20Adapter%20Based%20on%20Canable%202.0%20Supports%205%20Mbps,-Visit%20the%20Jhoinrch(in bottom right USB slot)
 
-Go to 
-```bash
-canable.io/updater/canable2.html 
-```
-and flash candlelight firmware to adapter
+https://canable.io/updater/canable2.html and flash Candlelight firmware to adapter
 
 The Limelight Systemcore OS release name was changed from the original build.sh file. Still release 10.
 
@@ -43,8 +39,6 @@ sudo ./build-image.sh
 This produces `systemcore-pi5b-beta10-v1.img` — flash it to an SD card.
 
 Insert the SD card into your Pi 5 and power on.
-
-
 
 Connect to SYSTEMCORE WIFI - password PASSWORD
 
