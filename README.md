@@ -203,7 +203,7 @@ If you used our examples, there should be Teleop and Auto Opmodes available.
 
 Canbus adapter lights should be flashing. The Systemcore System tab should show CAN_S0 up and its % usage
 
-To avoid possible SC card corruption, always do a software shutdown before powering off the PI
+To avoid possible SD card corruption, always do a software shutdown before powering off the PI
 
 ```bash
 sudo shutdown -h now
